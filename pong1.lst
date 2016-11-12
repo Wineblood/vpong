@@ -1,0 +1,1269 @@
+#[1]   pong1.asm
+   75  00:C000            RESET:
+   76  00:C000  78          SEI          ; disable IRQs
+   77  00:C001  D8          CLD          ; disable decimal mode
+   78  00:C002  A2 40       LDX #$40
+   79  00:C004  8E 17 40    STX $4017    ; disable APU frame IRQ
+   80  00:C007  A2 FF       LDX #$FF
+   81  00:C009  9A          TXS          ; Set up stack
+   82  00:C00A  E8          INX          ; now X = 0
+   83  00:C00B  8E 00 20    STX $2000    ; disable NMI
+   84  00:C00E  8E 01 20    STX $2001    ; disable rendering
+   85  00:C011  8E 10 40    STX $4010    ; disable DMC IRQs
+   86                     
+   87  00:C014            vblankwait1:       ; First wait for vblank to make sure PPU is ready
+   88  00:C014  2C 02 20    BIT $2002
+   89  00:C017  10 FB       BPL vblankwait1
+   90                     
+   91  00:C019            clrmem:
+   92  00:C019  A9 00       LDA #$00
+   93  00:C01B  9D 00 00    STA $0000, x
+   94  00:C01E  9D 00 01    STA $0100, x
+   95  00:C021  9D 00 03    STA $0300, x
+   96  00:C024  9D 00 04    STA $0400, x
+   97  00:C027  9D 00 05    STA $0500, x
+   98  00:C02A  9D 00 06    STA $0600, x
+   99  00:C02D  9D 00 07    STA $0700, x
+  100  00:C030  A9 FE       LDA #$FE
+  101  00:C032  9D 00 02    STA $0200, x
+  102  00:C035  E8          INX
+  103  00:C036  D0 E1       BNE clrmem
+  104                        
+  105  00:C038            vblankwait2:      ; Second wait for vblank, PPU is ready after this
+  106  00:C038  2C 02 20    BIT $2002
+  107  00:C03B  10 FB       BPL vblankwait2
+  108                     
+  109                     
+  110  00:C03D            LoadPalettes:
+  111  00:C03D  AD 02 20    LDA $2002             ; read PPU status to reset the high/low latch
+  112  00:C040  A9 3F       LDA #$3F
+  113  00:C042  8D 06 20    STA $2006             ; write the high byte of $3F00 address
+  114  00:C045  A9 00       LDA #$00
+  115  00:C047  8D 06 20    STA $2006             ; write the low byte of $3F00 address
+  116  00:C04A  A2 00       LDX #$00              ; start out at 0
+  117  00:C04C            LoadPalettesLoop:
+  118  00:C04C  BD 00 E0    LDA palette, x        ; load data from address (palette + the value in x)
+  119                                               ; 1st time through loop it will load palette+0
+  120                                               ; 2nd time through loop it will load palette+1
+  121                                               ; 3rd time through loop it will load palette+2
+  122                                               ; etc
+  123  00:C04F  8D 07 20    STA $2007             ; write to PPU
+  124  00:C052  E8          INX                   ; X = X + 1
+  125  00:C053  E0 20       CPX #$20              ; Compare X to hex $10, decimal 16 - copying 16 bytes = 4 sprites
+  126  00:C055  D0 F5       BNE LoadPalettesLoop  ; Branch to LoadPalettesLoop if compare was Not Equal to zero
+  127                                             ; if compare was equal to 32, keep going down
+  128                     
+  129                     
+  130  00:C057            ClearBackground:
+  131  00:C057  A9 20         LDA #$20
+  132  00:C059  8D 1C 00      STA var_2   ; var_2 = high byte of PPU address
+  133  00:C05C  A9 00         LDA #$00
+  134  00:C05E  8E 1B 00      STX var_1   ; var_1 = low byte of PPU address
+  135  00:C061  AD 02 20      LDA $2002             ; read PPU status to reset the high/low latch
+  136                         
+  137  00:C064  A0 00         LDY #$00
+  138  00:C066            ClearBackground_OuterLoop:
+  139  00:C066  A2 00         LDX #$00
+  140                         
+  141  00:C068            ClearBackground_InnerLoop
+  142  00:C068  AD 1C 00      LDA var_2
+  143  00:C06B  8D 06 20      STA $2006            ; set high byte write address 
+  144  00:C06E  AD 1B 00      LDA var_1
+  145  00:C071  8D 06 20      STA $2006            ; set low byte write address 
+  146  00:C074  A9 00         LDA #$00
+  147  00:C076  8D 07 20      STA $2007            ; clear tile
+  148                         
+  149  00:C079  AD 1B 00      LDA var_1
+  150  00:C07C  18            CLC
+  151  00:C07D  69 01         ADC #$01
+  152  00:C07F  8D 1B 00      STA var_1             ; increment low byte
+  153  00:C082  AD 1C 00      LDA var_2
+  154  00:C085  69 00         ADC #$00              ; push carry to high byte
+  155  00:C087  8D 1C 00      STA var_2
+  156                         
+  157  00:C08A  E8            INX
+  158                         
+  159  00:C08B  E0 20         CPX #32
+  160  00:C08D  D0 D9         BNE ClearBackground_InnerLoop
+  161                         
+  162  00:C08F  C8            INY
+  163  00:C090  C0 1E         CPY #30
+  164  00:C092  D0 D2         BNE ClearBackground_OuterLoop
+  165                         
+  166  00:C094            ClearAttributes:
+  167  00:C094  A9 23         LDA #$23
+  168  00:C096  8D 1C 00      STA var_2   ; var_2 = high byte of PPU address
+  169  00:C099  A9 C0         LDA #$C0
+  170  00:C09B  8E 1B 00      STX var_1   ; var_1 = low byte of PPU address
+  171  00:C09E  AD 02 20      LDA $2002             ; read PPU status to reset the high/low latch
+  172  00:C0A1  A2 00         LDX #$00
+  173                         
+  174  00:C0A3            ClearAttributes_Loop:
+  175  00:C0A3  AD 1C 00      LDA var_2
+  176  00:C0A6  8D 06 20      STA $2006             ; set high byte write address 
+  177  00:C0A9  AD 1B 00      LDA var_1
+  178  00:C0AC  8D 06 20      STA $2006             ; set low byte write address 
+  179  00:C0AF  A9 00         LDA #$00
+  180  00:C0B1  8D 07 20      STA $2007             ; clear attribute
+  181  00:C0B4  AD 1B 00      LDA var_1
+  182  00:C0B7  18            CLC
+  183  00:C0B8  69 01         ADC #$01
+  184  00:C0BA  8D 1B 00      STA var_1             ; increment low byte
+  185  00:C0BD  AD 1C 00      LDA var_2
+  186  00:C0C0  69 00         ADC #$00              ; push carry to high byte
+  187  00:C0C2  8D 1C 00      STA var_2
+  188                         
+  189  00:C0C5  E8            INX
+  190  00:C0C6  E0 F0         CPX #$F0
+  191  00:C0C8  D0 D9         BNE ClearAttributes_Loop
+  192                     
+  193  00:C0CA  20 0F C7    JSR RT_InitPlaySpaceBG
+  194                       
+  195  00:C0CD            InitSound:
+  196  00:C0CD  A9 0F       LDA #$0F
+  197  00:C0CF  8D 15 40    STA $4015
+  198  00:C0D2  A9 00       LDA #$00
+  199                         
+  200                     ;;;Set initial ball state
+  201  00:C0D4  A9 00       LDA #$00
+  202  00:C0D6  8D 04 00    STA balldown
+  203  00:C0D9  8D 06 00    STA ballright
+  204  00:C0DC  A9 00       LDA #$00
+  205  00:C0DE  8D 03 00    STA ballup
+  206  00:C0E1  8D 05 00    STA ballleft
+  207                       
+  208  00:C0E4  A9 50       LDA #$50
+  209  00:C0E6  8D 02 00    STA bally
+  210                       
+  211  00:C0E9  A9 80       LDA #$80
+  212  00:C0EB  8D 01 00    STA ballx
+  213                       
+  214  00:C0EE  A9 00       LDA #$00
+  215  00:C0F0  8D 0B 00    STA ballspeedx_fixedacc
+  216  00:C0F3  8D 0C 00    STA ballspeedy_fixedacc
+  217                       
+  218  00:C0F6  A9 20       LDA #%00100000
+  219  00:C0F8  8D 09 00    STA ballspeedx_fixed
+  220  00:C0FB  A9 20       LDA #%00100000        
+  221  00:C0FD  8D 0A 00    STA ballspeedy_fixed
+  222                       
+  223                     ;;Set initial paddle state
+  224  00:C100  A9 68       LDA #$68
+  225  00:C102  8D 0D 00    STA paddle1ytop
+  226  00:C105  8D 0E 00    STA paddle2ytop
+  227                     
+  228                     ;;:Set starting game state
+  229  00:C108  A9 03       LDA #STATENEWBALL
+  230  00:C10A  8D 00 00    STA gamestate
+  231                     
+  232  00:C10D  A9 00       LDA #$00
+  233  00:C10F  8D 13 00    STA p1lastscored
+  234                                   
+  235  00:C112  A9 90       LDA #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+  236  00:C114  8D 00 20    STA $2000
+  237                     
+  238  00:C117  A9 1E       LDA #%00011110   ; enable sprites, enable background, no clipping on left side
+  239  00:C119  8D 01 20    STA $2001
+  240                     
+  241  00:C11C            Forever:
+  242  00:C11C  4C 1C C1    JMP Forever     ;jump back to Forever, infinite loop, waiting for NMI
+  243                       
+  244                      
+  245                     
+  246  00:C11F            NMI:
+  247  00:C11F  A9 00       LDA #$00
+  248  00:C121  8D 03 20    STA $2003       ; set the low byte (00) of the RAM address
+  249  00:C124  A9 02       LDA #$02
+  250  00:C126  8D 14 40    STA $4014       ; set the high byte (02) of the RAM address, start the transfer
+  251                     
+  252                       ;;This is the PPU clean up section, so rendering the next frame starts properly.
+  253  00:C129  A9 90       LDA #%10010000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
+  254  00:C12B  8D 00 20    STA $2000
+  255  00:C12E  A9 1E       LDA #%00011110   ; enable sprites, enable background, no clipping on left side
+  256  00:C130  8D 01 20    STA $2001
+  257  00:C133  A9 00       LDA #$00        ;;tell the ppu there is no background scrolling
+  258  00:C135  8D 05 20    STA $2005
+  259  00:C138  8D 05 20    STA $2005
+  260                         
+  261                       ;;;all graphics updates done by here, run game engine
+  262                     
+  263  00:C13B  20 C6 C6    JSR RT_ReadController1  ;;get the current button data for player 1
+  264  00:C13E  20 DD C6    JSR RT_ReadController2  ;;get the current button data for player 2
+  265                       
+  266  00:C141            GameEngine:  
+  267  00:C141  AD 00 00    LDA gamestate
+  268  00:C144  C9 00       CMP #STATETITLE
+  269  00:C146  D0 02       BNE GameEngine_CheckStateGameOver 
+  270  00:C148  F0 22       BEQ EngineTitle    ;;game is displaying title screen
+  271                     
+  272  00:C14A            GameEngine_CheckStateGameOver:  
+  273  00:C14A  AD 00 00    LDA gamestate
+  274  00:C14D  C9 02       CMP #STATEGAMEOVER
+  275  00:C14F  D0 03       BNE GameEngine_CheckStatePlaying 
+  276  00:C151  4C 6F C1    JMP EngineGameOver  ;;game is displaying ending screen
+  277                     
+  278  00:C154            GameEngine_CheckStatePlaying:
+  279  00:C154  AD 00 00    LDA gamestate
+  280  00:C157  C9 01       CMP #STATEPLAYING
+  281  00:C159  D0 03       BNE GameEngine_CheckStateNewBall   
+  282  00:C15B  4C 72 C1    JMP EnginePlaying                    ;;game is playing
+  283                       
+  284  00:C15E            GameEngine_CheckStateNewBall:
+  285  00:C15E  AD 00 00    LDA gamestate
+  286  00:C161  C9 03       CMP #STATENEWBALL
+  287  00:C163  D0 03       BNE GameEngineDone
+  288  00:C165  4C 00 C4    JMP EngineNewBall   ;; game is waiting for player input on new ball
+  289                     
+  290  00:C168            GameEngineDone:  
+  291                       
+  292  00:C168  20 35 C5    JSR RT_UpdateSprites  ;;set ball/paddle sprites from positions
+  293                     
+  294  00:C16B  40          RTI             ; return from interrupt
+  295                      
+  296                      
+  297                      
+  298                      
+  299                     ;;;;;;;;
+  300                      
+  301  00:C16C            EngineTitle:
+  302                       ;;if start button pressed
+  303                       ;;  turn screen off
+  304                       ;;  load game screen
+  305                       ;;  set starting paddle/ball position
+  306                       ;;  go to Playing State
+  307                       ;;  turn screen on
+  308  00:C16C  4C 68 C1    JMP GameEngineDone
+  309                     
+  310                     ;;;;;;;;; 
+  311                      
+  312  00:C16F            EngineGameOver:
+  313                       ;;if start button pressed
+  314                       ;;  turn screen off
+  315                       ;;  load title screen
+  316                       ;;  go to Title State
+  317                       ;;  turn screen on 
+  318  00:C16F  4C 68 C1    JMP GameEngineDone
+  319                      
+  320                     ;;;;;;;;;;;
+  321                      
+  322                       
+  323  00:C172            EnginePlaying:
+  324                       
+  325  00:C172  A9 09       LDA #SCOREXPOS_1P
+  326  00:C174  8D 16 00    STA arg_1
+  327  00:C177  20 7D C6    JSR RT_EraseScore
+  328                       
+  329  00:C17A  A9 14       LDA #SCOREXPOS_2P
+  330  00:C17C  8D 16 00    STA arg_1
+  331  00:C17F  20 7D C6    JSR RT_EraseScore
+  332                       
+  333  00:C182            FixedMath_BallspeedX:
+  334  00:C182  AD 0B 00    LDA ballspeedx_fixedacc
+  335  00:C185  18          CLC
+  336  00:C186  6D 09 00    ADC ballspeedx_fixed
+  337  00:C189  8D 0B 00    STA ballspeedx_fixedacc    ; add the speed to the accumulator
+  338  00:C18C  AD 0B 00    LDA ballspeedx_fixedacc
+  339  00:C18F  4A          LSR A
+  340  00:C190  4A          LSR A
+  341  00:C191  4A          LSR A
+  342  00:C192  4A          LSR A
+  343  00:C193  8D 07 00    STA ballspeedx             ; add the whole part to the speed used this frame
+  344  00:C196  AD 0B 00    LDA ballspeedx_fixedacc
+  345  00:C199  18          CLC
+  346  00:C19A  29 0F       AND #%00001111
+  347  00:C19C  8D 0B 00    STA ballspeedx_fixedacc    ; then flush the whole part
+  348                     
+  349  00:C19F            FixedMath_BallSpeedY:  
+  350  00:C19F  AD 0C 00    LDA ballspeedy_fixedacc
+  351  00:C1A2  18          CLC
+  352  00:C1A3  6D 0A 00    ADC ballspeedy_fixed
+  353  00:C1A6  8D 0C 00    STA ballspeedy_fixedacc    ; add the speed to the accumulator
+  354  00:C1A9  AD 0C 00    LDA ballspeedy_fixedacc
+  355  00:C1AC  4A          LSR A
+  356  00:C1AD  4A          LSR A
+  357  00:C1AE  4A          LSR A
+  358  00:C1AF  4A          LSR A
+  359  00:C1B0  8D 08 00    STA ballspeedy             ; add the whole part to the speed used this frame
+  360  00:C1B3  AD 0C 00    LDA ballspeedy_fixedacc
+  361  00:C1B6  18          CLC
+  362  00:C1B7  29 0F       AND #%00001111
+  363  00:C1B9  8D 0C 00    STA ballspeedy_fixedacc    ; then flush the whole part
+  364                       
+  365  00:C1BC            MoveBallRight:
+  366  00:C1BC  AD 06 00    LDA ballright
+  367  00:C1BF  F0 28       BEQ MoveBallRightDone   ;;if ballright=0, skip this section
+  368                     
+  369  00:C1C1  AD 01 00    LDA ballx
+  370  00:C1C4  18          CLC
+  371  00:C1C5  6D 07 00    ADC ballspeedx        ;;ballx position = ballx + ballspeedx
+  372  00:C1C8  CD 01 00    CMP ballx
+  373  00:C1CB  F0 19       BEQ MoveBallRight_SaveX
+  374  00:C1CD  90 03       BCC MoveBallRight_P1Scored
+  375  00:C1CF  4C E6 C1    JMP MoveBallRight_SaveX      ;;if ballx + ballwidth < right wall, still on screen, skip next section
+  376                       
+  377  00:C1D2            MoveBallRight_P1Scored:
+  378  00:C1D2  A9 01       LDA #$01
+  379  00:C1D4  8D 13 00    STA p1lastscored           ;; p1 scored
+  380  00:C1D7  AE 11 00    LDX score1
+  381  00:C1DA  E8          INX
+  382  00:C1DB  8E 11 00    STX score1                 ;; increment p1 score
+  383  00:C1DE  A9 03       LDA #STATENEWBALL
+  384  00:C1E0  8D 00 00    STA gamestate              ;; new round
+  385  00:C1E3  4C 68 C1    JMP GameEngineDone
+  386                       
+  387  00:C1E6            MoveBallRight_SaveX:
+  388  00:C1E6  8D 01 00    STA ballx
+  389  00:C1E9            MoveBallRightDone:
+  390                     
+  391                     
+  392  00:C1E9            MoveBallLeft:
+  393  00:C1E9  AD 05 00    LDA ballleft
+  394  00:C1EC  F0 28       BEQ MoveBallLeftDone   ;;if ballleft=0, skip this section
+  395                     
+  396  00:C1EE  AD 01 00    LDA ballx
+  397  00:C1F1  38          SEC
+  398  00:C1F2  ED 07 00    SBC ballspeedx        ;;ballx position = ballx - ballspeedx
+  399  00:C1F5  CD 01 00    CMP ballx
+  400  00:C1F8  F0 19       BEQ MoveBallLeft_SaveX
+  401  00:C1FA  B0 03       BCS MoveBallLeft_P2Scored
+  402  00:C1FC  4C 13 C2    JMP MoveBallLeft_SaveX      ;;if ball x > left wall, still on screen, skip next section
+  403                       
+  404  00:C1FF            MoveBallLeft_P2Scored:
+  405  00:C1FF  A9 00       LDA #$00
+  406  00:C201  8D 13 00    STA p1lastscored           ;; p2 scored
+  407  00:C204  AE 12 00    LDX score2
+  408  00:C207  E8          INX
+  409  00:C208  8E 12 00    STX score2                 ;; increment p2 score
+  410  00:C20B  A9 03       LDA #STATENEWBALL
+  411  00:C20D  8D 00 00    STA gamestate              ;; new round
+  412  00:C210  4C 68 C1    JMP GameEngineDone
+  413                       
+  414  00:C213            MoveBallLeft_SaveX:
+  415  00:C213  8D 01 00    STA ballx
+  416  00:C216            MoveBallLeftDone:
+  417                       
+  418  00:C216            MoveBallUp:
+  419  00:C216  AD 03 00    LDA ballup
+  420  00:C219  F0 25       BEQ MoveBallUpDone   ;;if ballup=0, skip this section
+  421                     
+  422  00:C21B  AD 02 00    LDA bally
+  423  00:C21E  38          SEC
+  424  00:C21F  ED 08 00    SBC ballspeedy        ;;bally position = bally - ballspeedy
+  425  00:C222  CD 02 00    CMP bally
+  426  00:C225  8D 02 00    STA bally
+  427  00:C228  B0 04       BCS MoveBallUp_Bounce    ;; if ball y wrapped around, bounce
+  428  00:C22A  C9 08       CMP #$08
+  429  00:C22C  B0 12       BCS MoveBallUpDone    ;;if ball y > top wall, still on screen, no bounce
+  430  00:C22E            MoveBallUp_Bounce:
+  431  00:C22E  A9 01       LDA #$01
+  432  00:C230  8D 04 00    STA balldown
+  433  00:C233  A9 00       LDA #$00
+  434  00:C235  8D 03 00    STA ballup         ;;bounce, ball now moving down
+  435  00:C238  A9 08       LDA #$08
+  436  00:C23A  8D 02 00    STA bally          ;; clip bally to topwall
+  437  00:C23D  20 20 C5    JSR RT_PlayBallBounceSound
+  438  00:C240            MoveBallUpDone:
+  439                     
+  440                     
+  441  00:C240            MoveBallDown:
+  442  00:C240  AD 04 00    LDA balldown
+  443  00:C243  F0 25       BEQ MoveBallDownDone   ;;if ballup=0, skip this section
+  444                     
+  445  00:C245  AD 02 00    LDA bally
+  446  00:C248  18          CLC
+  447  00:C249  6D 08 00    ADC ballspeedy        ;;bally position = bally + ballspeedy
+  448  00:C24C  CD 02 00    CMP bally
+  449  00:C24F  8D 02 00    STA bally
+  450  00:C252  90 04       BCC MoveBallDown_Bounce
+  451  00:C254  C9 E0       CMP #$F0 - $08 - BALLSIZE
+  452  00:C256  90 12       BCC MoveBallDownDone      ;;if bally - ballsize < bottom wall, still on screen, skip next section
+  453  00:C258            MoveBallDown_Bounce:
+  454  00:C258  A9 00       LDA #$00
+  455  00:C25A  8D 04 00    STA balldown
+  456  00:C25D  A9 01       LDA #$01
+  457  00:C25F  8D 03 00    STA ballup         ;;bounce, ball now moving down
+  458  00:C262  A9 E0       LDA #$F0 - $08 - BALLSIZE
+  459  00:C264  8D 02 00    STA bally
+  460  00:C267  20 20 C5    JSR RT_PlayBallBounceSound
+  461  00:C26A            MoveBallDownDone:
+  462                     
+  463  00:C26A  20 9C C4    JSR RT_UpdatePaddles
+  464                     
+  465  00:C26D            CheckPaddleCollision:
+  466  00:C26D  A9 00       LDA #$00
+  467  00:C26F  8D 1F 00    STA var_5 ; var_5 = bounce dir (0 = bottom, 1 = top)
+  468  00:C272            CheckPaddleCollisionX:
+  469  00:C272  AD 05 00    LDA ballleft
+  470  00:C275  C9 01       CMP #$01
+  471  00:C277  D0 23       BNE CheckPaddleCollisionRight
+  472                       
+  473  00:C279            CheckPaddleCollisionLeft:
+  474  00:C279  AD 01 00    LDA ballx
+  475  00:C27C  C9 10       CMP #PADDLE1X + PADDLEWIDTH 
+  476  00:C27E  90 03       BCC CheckPaddleCollisionLeft_1
+  477  00:C280  4C EF C2    JMP CheckPaddleCollisionDone            ; if x > paddle1x + paddle width then reject collision (at left of paddle)
+  478  00:C283            CheckPaddleCollisionLeft_1:
+  479  00:C283  C9 00       CMP #PADDLE1X - BALLSIZE
+  480  00:C285  B0 03       BCS CheckPaddleCollisionLeft_2  
+  481  00:C287  4C EF C2    JMP CheckPaddleCollisionDone            ; if x + ball size < paddle1x width then reject collision (past the paddle)
+  482  00:C28A            CheckPaddleCollisionLeft_2:
+  483  00:C28A  AD 0D 00    LDA paddle1ytop
+  484  00:C28D  8D 1B 00    STA var_1                 ; var_1 = paddle1 y top
+  485  00:C290  A9 10       LDA #PADDLE1X + PADDLEWIDTH
+  486  00:C292  38          SEC
+  487  00:C293  ED 01 00    SBC ballx
+  488  00:C296  8D 1C 00    STA var_2                 ; var_2 = X penetration
+  489  00:C299  4C B6 C2    JMP CheckPaddleCollisionY
+  490                       
+  491  00:C29C            CheckPaddleCollisionRight:
+  492  00:C29C  AD 01 00    LDA ballx
+  493  00:C29F  C9 F8       CMP #PADDLE2X + PADDLEWIDTH
+  494  00:C2A1  B0 4C       BCS CheckPaddleCollisionDone
+  495  00:C2A3  C9 E8       CMP #PADDLE2X - BALLSIZE
+  496  00:C2A5  90 48       BCC CheckPaddleCollisionDone
+  497  00:C2A7  AD 0E 00    LDA paddle2ytop
+  498  00:C2AA  8D 1B 00    STA var_1                 ; var_1 = paddle2 y top
+  499  00:C2AD  AD 01 00    LDA ballx
+  500  00:C2B0  38          SEC
+  501  00:C2B1  E9 E8       SBC #PADDLE2X - BALLSIZE
+  502  00:C2B3  8D 1C 00    STA var_2                 ; var_2 = X penetration
+  503                     
+  504  00:C2B6            CheckPaddleCollisionY:
+  505  00:C2B6  AD 1B 00    LDA var_1
+  506  00:C2B9  18          CLC
+  507  00:C2BA  69 20       ADC #PADDLEHEIGHT
+  508  00:C2BC  8D 1D 00    STA var_3                ; var_3 = paddle y bottom
+  509  00:C2BF  AD 03 00    LDA ballup
+  510  00:C2C2  C9 01       CMP #01
+  511  00:C2C4  D0 13       BNE CheckPaddleCollisionDown
+  512                       
+  513  00:C2C6            CheckPaddleCollisionUp:
+  514  00:C2C6  AD 02 00    LDA bally
+  515  00:C2C9  CD 1D 00    CMP var_3
+  516  00:C2CC  B0 21       BCS CheckPaddleCollisionDone ; if bally > paddle y bottom then reject collision
+  517  00:C2CE  18          CLC
+  518  00:C2CF  69 08       ADC #BALLSIZE
+  519  00:C2D1  CD 1B 00    CMP var_1
+  520  00:C2D4  90 19       BCC CheckPaddleCollisionDone ; if bally bottom < paddle y top then reject collision
+  521  00:C2D6  4C F2 C2    JMP CheckPaddleCollision_CalcYPen
+  522                       
+  523  00:C2D9            CheckPaddleCollisionDown:
+  524  00:C2D9  AD 02 00    LDA bally
+  525  00:C2DC  18          CLC
+  526  00:C2DD  69 08       ADC #BALLSIZE
+  527  00:C2DF  CD 1B 00    CMP var_1
+  528  00:C2E2  90 0B       BCC CheckPaddleCollisionDone
+  529  00:C2E4  AD 02 00    LDA bally
+  530  00:C2E7  CD 1D 00    CMP var_3
+  531  00:C2EA  B0 03       BCS CheckPaddleCollisionDone
+  532  00:C2EC  4C F2 C2    JMP CheckPaddleCollision_CalcYPen
+  533                     
+  534  00:C2EF            CheckPaddleCollisionDone:
+  535  00:C2EF  4C FD C3    JMP CheckPaddleCollisionDone_LongJMP
+  536                       
+  537  00:C2F2            CheckPaddleCollision_CalcYPen:
+  538  00:C2F2  AD 1D 00    LDA var_3
+  539  00:C2F5  38          SEC
+  540  00:C2F6  ED 02 00    SBC bally
+  541  00:C2F9  8D 1E 00    STA var_4                    ; var_4 = Y bottom penetration
+  542                     
+  543  00:C2FC  AD 02 00    LDA bally
+  544  00:C2FF  18          CLC
+  545  00:C300  69 08       ADC #BALLSIZE
+  546  00:C302  38          SEC
+  547  00:C303  ED 1B 00    SBC var_1
+  548  00:C306  CD 1E 00    CMP var_4                    ; use smallest penetration, then save it
+  549  00:C309  90 03       BCC CheckPaddleCollision_YPenTop
+  550  00:C30B  4C 16 C3    JMP CheckPaddleCollision_Reb
+  551  00:C30E            CheckPaddleCollision_YPenTop:
+  552  00:C30E  8D 1E 00    STA var_4                    ; var_4 = Y top penetration
+  553  00:C311  A9 01       LDA #$01
+  554  00:C313  8D 1F 00    STA var_5                    ; var_5 = bounce up
+  555                       
+  556  00:C316            CheckPaddleCollision_Reb:
+  557  00:C316  AD 1C 00    LDA var_2
+  558  00:C319  CD 1E 00    CMP var_4
+  559  00:C31C  B0 13       BCS CheckPaddleCollision_Reb_V
+  560                       
+  561  00:C31E  AD 05 00    LDA ballleft
+  562  00:C321  49 01       EOR #$01
+  563  00:C323  8D 05 00    STA ballleft
+  564  00:C326  AD 06 00    LDA ballright
+  565  00:C329  49 01       EOR #$01
+  566  00:C32B  8D 06 00    STA ballright
+  567  00:C32E  4C 4A C3    JMP CheckPaddleCollision_SetX
+  568                       
+  569  00:C331            CheckPaddleCollision_Reb_V:
+  570  00:C331  AD 1F 00    LDA var_5
+  571  00:C334  CD 03 00    CMP ballup
+  572  00:C337  D0 03       BNE CheckPaddleCollision_Reb_V1
+  573  00:C339  4C FD C3    JMP CheckPaddleCollisionDone_LongJMP
+  574                       
+  575  00:C33C            CheckPaddleCollision_Reb_V1:
+  576  00:C33C  8D 03 00    STA ballup
+  577  00:C33F  49 01       EOR #$01
+  578  00:C341  8D 04 00    STA balldown
+  579  00:C344  20 20 C5    JSR RT_PlayBallBounceSound
+  580  00:C347  4C FD C3    JMP CheckPaddleCollisionDone_LongJMP
+  581                     
+  582  00:C34A            CheckPaddleCollision_SetX:
+  583  00:C34A  AD 05 00    LDA ballleft
+  584  00:C34D  C9 01       CMP #$01
+  585  00:C34F  F0 08       BEQ CheckPaddleCollision_SetXRightPaddle
+  586  00:C351  A9 10       LDA #PADDLE1X + PADDLEWIDTH
+  587  00:C353  8D 01 00    STA ballx                                  ; Set ball x on the left paddle
+  588  00:C356  4C 5E C3    JMP CheckPaddleCollision_CalcSpeed
+  589                       
+  590  00:C359            CheckPaddleCollision_SetXRightPaddle:
+  591  00:C359  A9 E8       LDA #PADDLE2X - BALLSIZE
+  592  00:C35B  8D 01 00    STA ballx                                  ; Set ball x on the right paddle
+  593                       
+  594  00:C35E            CheckPaddleCollision_CalcSpeed:
+  595  00:C35E  A2 00       LDX #$00
+  596  00:C360  A0 01       LDY #$01
+  597  00:C362  8C 03 00    STY ballup                                  ; Let's assume first that the ball will bounce up
+  598  00:C365  8E 04 00    STX balldown
+  599                       
+  600  00:C368  AD 02 00    LDA bally
+  601  00:C36B  38          SEC
+  602  00:C36C  ED 1B 00    SBC var_1                                   ; Setup value to start computing quadrants (bally - paddletop)
+  603  00:C36F  A2 01       LDX #$01
+  604  00:C371  C9 FC       CMP #$FC
+  605  00:C373  B0 3F       BCS CheckPaddleCollision_CalcSpeedTable   ; if bally < 0
+  606  00:C375  A2 00       LDX #$00
+  607  00:C377  C9 E0       CMP #$E0
+  608  00:C379  B0 39       BCS CheckPaddleCollision_CalcSpeedTable   ; if bally < -4 (or more, we're generous here)
+  609  00:C37B  A2 02       LDX #$02
+  610  00:C37D  C9 04       CMP #$04
+  611  00:C37F  90 33       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 4
+  612  00:C381  A2 03       LDX #$03
+  613  00:C383  C9 08       CMP #$08
+  614  00:C385  90 2D       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 8
+  615  00:C387  A2 04       LDX #$04
+  616  00:C389  C9 0C       CMP #$0C
+  617  00:C38B  90 27       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 12
+  618                       
+  619  00:C38D  A0 00       LDY #$00
+  620  00:C38F  8C 03 00    STY ballup 
+  621  00:C392  A0 01       LDY #$01  
+  622  00:C394  8C 04 00    STY balldown                        ; if all those conditions failed then the ball goes down
+  623                       
+  624  00:C397  A2 04       LDX #$04
+  625  00:C399  C9 10       CMP #$10
+  626  00:C39B  90 17       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 16
+  627  00:C39D  A2 03       LDX #$03
+  628  00:C39F  C9 14       CMP #$14
+  629  00:C3A1  90 11       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 20
+  630  00:C3A3  A2 02       LDX #$02
+  631  00:C3A5  C9 18       CMP #$18
+  632  00:C3A7  90 0B       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 24
+  633  00:C3A9  A2 01       LDX #$01
+  634  00:C3AB  C9 1C       CMP #$1C
+  635  00:C3AD  90 05       BCC CheckPaddleCollision_CalcSpeedTable   ; if bally < 28
+  636  00:C3AF  A2 00       LDX #$00
+  637  00:C3B1  4C B4 C3    JMP CheckPaddleCollision_CalcSpeedTable   ; if bally > 28
+  638                       
+  639  00:C3B4            CheckPaddleCollision_CalcSpeedTable:
+  640  00:C3B4  A9 00       LDA #$00
+  641  00:C3B6  A0 00       LDY #$00
+  642  00:C3B8            CheckPaddleCollision_CSTLoop:               ; ballspeedoffset = baseoffset + entrysize * ballspeedlevel
+  643  00:C3B8  CC 14 00    CPY ballspeedlevel
+  644  00:C3BB  F0 07       BEQ CheckPaddleCollision_SetSpeed    
+  645  00:C3BD  C8          INY
+  646  00:C3BE  18          CLC
+  647  00:C3BF  69 0A       ADC #$0A                                  ; jump over a full entry of ball speed
+  648  00:C3C1  4C B8 C3    JMP CheckPaddleCollision_CSTLoop
+  649  00:C3C4            CheckPaddleCollision_SetSpeed:
+  650  00:C3C4  8E 1B 00    STX var_1
+  651  00:C3C7  18          CLC
+  652  00:C3C8  6D 1B 00    ADC var_1
+  653  00:C3CB  AA          TAX
+  654  00:C3CC  BD 28 E0    LDA paddlehitspeeds, x
+  655  00:C3CF  8D 09 00    STA ballspeedx_fixed
+  656  00:C3D2  BD 29 E0    LDA paddlehitspeeds + 1, x
+  657  00:C3D5  8D 0A 00    STA ballspeedy_fixed
+  658  00:C3D8  20 0B C5    JSR RT_PlayPaddleHitSound
+  659                       ; give progress to the ball speed
+  660  00:C3DB  AC 14 00    LDY ballspeedlevel
+  661  00:C3DE  AD 15 00    LDA ballspeedprogress
+  662  00:C3E1  18          CLC
+  663  00:C3E2  69 01       ADC #$01                           ; progress + 1
+  664  00:C3E4  D9 20 E0    CMP ballleveluptable,y
+  665  00:C3E7  D0 11       BNE CheckPaddleCollision_NoLevelUp ; level up speed if progress is greater than the levelup table value
+  666  00:C3E9  C8          INY
+  667  00:C3EA  CC 08 00    CPY NUMBEROFBALLLEVELS
+  668  00:C3ED  F0 0E       BEQ CheckPaddleCollisionDone_LongJMP ; if we're at max level, no level up
+  669  00:C3EF  8C 14 00    STY ballspeedlevel
+  670  00:C3F2  A2 00       LDX #$00
+  671  00:C3F4  8E 15 00    STX ballspeedprogress
+  672  00:C3F7  4C FD C3    JMP CheckPaddleCollisionDone_LongJMP
+  673  00:C3FA            CheckPaddleCollision_NoLevelUp:
+  674  00:C3FA  8D 15 00    STA ballspeedprogress
+  675                       
+  676  00:C3FD            CheckPaddleCollisionDone_LongJMP:
+  677  00:C3FD  4C 68 C1    JMP GameEngineDone
+  678                     
+  679  00:C400            EngineNewBall:
+  680                       ; reset speed level
+  681  00:C400  A9 00       LDA #$00
+  682  00:C402  8D 14 00    STA ballspeedlevel
+  683  00:C405  A9 00       LDA #$00
+  684  00:C407  8D 15 00    STA ballspeedprogress
+  685                       ; reset speed
+  686  00:C40A  AD 2E E0    LDA paddlehitspeeds + 6
+  687  00:C40D  8D 09 00    STA ballspeedx_fixed
+  688  00:C410  AD 2F E0    LDA paddlehitspeeds + 7
+  689  00:C413  8D 0A 00    STA ballspeedy_fixed
+  690                       
+  691  00:C416  AD 11 00    LDA score1
+  692  00:C419  8D 16 00    STA arg_1
+  693  00:C41C  A9 09       LDA #SCOREXPOS_1P
+  694  00:C41E  8D 17 00    STA arg_2
+  695  00:C421  20 16 C6    JSR RT_DrawScore ; draw 1p score
+  696                       
+  697  00:C424  AD 12 00    LDA score2
+  698  00:C427  8D 16 00    STA arg_1
+  699  00:C42A  A9 14       LDA #SCOREXPOS_2P
+  700  00:C42C  8D 17 00    STA arg_2
+  701  00:C42F  20 16 C6    JSR RT_DrawScore ; draw 1p score
+  702                       
+  703  00:C432  20 9C C4    JSR RT_UpdatePaddles
+  704                       
+  705  00:C435            EngineNewBall_WaitForInput:
+  706  00:C435  AD 13 00    LDA p1lastscored
+  707  00:C438  C9 01       CMP #$01
+  708  00:C43A  F0 30       BEQ EngineNewBall_WaitForP2Input
+  709                     
+  710  00:C43C            EngineNewBall_WaitForP1Input:
+  711  00:C43C  A9 10       LDA #PADDLE1X + PADDLEWIDTH
+  712  00:C43E  8D 01 00    STA ballx                  ;; set service to p1 - ballx
+  713  00:C441  AD 0D 00    LDA paddle1ytop
+  714  00:C444  18          CLC
+  715  00:C445  69 0C       ADC #((PADDLEHEIGHT / 2) - (BALLSIZE / 2))
+  716  00:C447  8D 02 00    STA bally                  ;; set service to p1 - bally
+  717                       
+  718  00:C44A  AD 0F 00    LDA buttons1
+  719  00:C44D  29 C0       AND #%11000000
+  720  00:C44F  F0 48       BEQ EngineNewBallEnd
+  721  00:C451  A9 01       LDA #$01
+  722  00:C453  8D 03 00    STA ballup
+  723  00:C456  8D 06 00    STA ballright
+  724  00:C459  A9 00       LDA #$00
+  725  00:C45B  8D 05 00    STA ballleft
+  726  00:C45E  8D 04 00    STA balldown
+  727  00:C461  20 0B C5    JSR RT_PlayPaddleHitSound
+  728  00:C464  A9 01       LDA #STATEPLAYING
+  729  00:C466  8D 00 00    STA gamestate
+  730  00:C469  4C 99 C4    JMP EngineNewBallEnd
+  731                       
+  732  00:C46C            EngineNewBall_WaitForP2Input:
+  733  00:C46C  A9 E8       LDA #PADDLE2X - BALLSIZE
+  734  00:C46E  8D 01 00    STA ballx                  ;; set service to p2 - ballx
+  735  00:C471  AD 0E 00    LDA paddle2ytop
+  736  00:C474  18          CLC
+  737  00:C475  69 0C       ADC #((PADDLEHEIGHT / 2) - (BALLSIZE / 2))
+  738  00:C477  8D 02 00    STA bally                  ;; set service to p2 - bally
+  739                       
+  740  00:C47A  AD 10 00    LDA buttons2
+  741  00:C47D  29 C0       AND #%11000000
+  742  00:C47F  F0 18       BEQ EngineNewBallEnd
+  743  00:C481  A9 01       LDA #$01
+  744  00:C483  8D 03 00    STA ballup
+  745  00:C486  8D 05 00    STA ballleft
+  746  00:C489  A9 00       LDA #$00
+  747  00:C48B  8D 06 00    STA ballright
+  748  00:C48E  8D 04 00    STA balldown
+  749  00:C491  20 0B C5    JSR RT_PlayPaddleHitSound
+  750  00:C494  A9 01       LDA #STATEPLAYING
+  751  00:C496  8D 00 00    STA gamestate
+  752                       
+  753  00:C499            EngineNewBallEnd:
+  754  00:C499  4C 68 C1    JMP GameEngineDone
+  755                       
+  756  00:C49C            RT_UpdatePaddles: ;;#ROUTINE_START
+  757  00:C49C  A9 0D       LDA #paddle1ytop
+  758  00:C49E  8D 16 00    STA arg_1
+  759  00:C4A1  A9 0F       LDA #buttons1
+  760  00:C4A3  8D 17 00    STA arg_2
+  761  00:C4A6  20 B7 C4    JSR RT_PaddleMovement ; Update psddle 1
+  762                       
+  763  00:C4A9  A9 0E       LDA #paddle2ytop
+  764  00:C4AB  8D 16 00    STA arg_1
+  765  00:C4AE  A9 10       LDA #buttons2
+  766  00:C4B0  8D 17 00    STA arg_2
+  767  00:C4B3  20 B7 C4    JSR RT_PaddleMovement ; Update psddle 2
+  768  00:C4B6  60          RTS
+  769                       
+  770                     ; arg_1 (INOUT) = ZP pointer to paddleytop
+  771                     ; arg_2 (IN)    = ZP pointer to buttons
+  772  00:C4B7            RT_PaddleMovement: ;;#ROUTINE_START
+  773  00:C4B7  AE 16 00      LDX arg_1
+  774  00:C4BA  BD 00 00      LDA $00,x
+  775  00:C4BD  8D 1B 00      STA var_1           ; var_1 = paddleytop
+  776  00:C4C0  AE 17 00      LDX arg_2
+  777  00:C4C3  BD 00 00      LDA $00,x
+  778  00:C4C6  8D 1C 00      STA var_2           ; var_2 = buttons
+  779                         
+  780  00:C4C9            MovePaddleUp:
+  781  00:C4C9  AD 1C 00      LDA var_2
+  782  00:C4CC  29 08         AND #%00001000
+  783  00:C4CE  F0 12         BEQ MovePaddleUpDone ; if up button pressed...
+  784                     
+  785  00:C4D0  AD 1B 00      LDA var_1
+  786  00:C4D3  38            SEC
+  787  00:C4D4  E9 03         SBC #PADDLESPEED      ; ...paddley = paddley + speed
+  788  00:C4D6  8D 1B 00      STA var_1
+  789                     
+  790  00:C4D9  C9 08         CMP #TOPWALL          ; if paddley > top wall
+  791  00:C4DB  B0 05         BCS MovePaddleUpDone ; else clip value
+  792  00:C4DD  A9 08         LDA #TOPWALL
+  793  00:C4DF  8D 1B 00      STA var_1       ; clip paddley = top wall
+  794  00:C4E2            MovePaddleUpDone:
+  795                     
+  796  00:C4E2            MovePaddleDown:
+  797  00:C4E2  AD 1C 00      LDA var_2
+  798  00:C4E5  29 04         AND #%00000100
+  799  00:C4E7  F0 18         BEQ MovePaddleDownDone ; if up button pressed...
+  800                     
+  801  00:C4E9  AD 1B 00      LDA var_1
+  802  00:C4EC  18            CLC
+  803  00:C4ED  69 03         ADC #PADDLESPEED        ; ...paddley = paddley + speed
+  804  00:C4EF  8D 1B 00      STA var_1
+  805                     
+  806  00:C4F2  18            CLC
+  807  00:C4F3  69 20         ADC #PADDLEHEIGHT
+  808  00:C4F5  C9 E6         CMP #BOTTOMWALL          ; if paddley + paddleheight > bottomwall, clip value
+  809  00:C4F7  90 08         BCC MovePaddleDownDone 
+  810  00:C4F9  A9 E6         LDA #BOTTOMWALL
+  811  00:C4FB  38            SEC
+  812  00:C4FC  E9 20         SBC #PADDLEHEIGHT
+  813  00:C4FE  8D 1B 00      STA var_1          ; clip paddley to bottomwall - paddleheight
+  814  00:C501            MovePaddleDownDone:
+  815                     
+  816  00:C501  AE 16 00      LDX arg_1
+  817  00:C504  AD 1B 00      LDA var_1
+  818  00:C507  9D 00 00      STA $00,x     ; *arg_1 = updated paddleytop
+  819  00:C50A  60            RTS 
+  820                     
+  821  00:C50B            RT_PlayPaddleHitSound: ;;#ROUTINE_START
+  822  00:C50B  A9 1F       LDA #%00011111
+  823  00:C50D  8D 08 40    STA $4008
+  824  00:C510  A9 08       LDA #$08
+  825  00:C512  8D 09 40    STA $4009
+  826  00:C515  A9 6A       LDA #$6A
+  827  00:C517  8D 0A 40    STA $400A
+  828  00:C51A  A9 00       LDA #$00
+  829  00:C51C  8D 0B 40    STA $400B
+  830  00:C51F  60          RTS
+  831                     
+  832  00:C520            RT_PlayBallBounceSound: ;;#ROUTINE_START
+  833  00:C520  A9 1F       LDA #%00011111
+  834  00:C522  8D 08 40    STA $4008
+  835  00:C525  A9 08       LDA #$08
+  836  00:C527  8D 09 40    STA $4009
+  837  00:C52A  A9 AB       LDA #$AB
+  838  00:C52C  8D 0A 40    STA $400A
+  839  00:C52F  A9 01       LDA #$01
+  840  00:C531  8D 0B 40    STA $400B
+  841  00:C534  60          RTS
+  842                       
+  843  00:C535            RT_UpdateSprites: ;;#ROUTINE_START
+  844  00:C535  AD 02 00    LDA bally  ;;update all ball sprite info
+  845  00:C538  8D 00 02    STA $0200
+  846                       
+  847  00:C53B  A9 01       LDA #$01
+  848  00:C53D  8D 01 02    STA $0201
+  849                       
+  850  00:C540  A9 00       LDA #$00
+  851  00:C542  8D 02 02    STA $0202
+  852                       
+  853  00:C545  AD 01 00    LDA ballx
+  854  00:C548  8D 03 02    STA $0203
+  855                       
+  856                       ;;update paddle sprites
+  857                       
+  858                       ;;;;;;;; paddle 1 sprites
+  859                       ; sprite 1 begin
+  860  00:C54B  A2 00       LDX #$00  ; sprite 1 mem offset
+  861  00:C54D  AD 0D 00    LDA paddle1ytop ; sprite 1 y 
+  862  00:C550  9D 04 02    STA $204,x  
+  863  00:C553  A9 10       LDA #$10  ; sprite 1 tile
+  864  00:C555  9D 05 02    STA $205,x
+  865  00:C558  A9 01       LDA #$01  ; sprite 1 attr
+  866  00:C55A  9D 06 02    STA $206,x
+  867  00:C55D  A9 08       LDA #PADDLE1X
+  868  00:C55F  9D 07 02    STA $207,x
+  869                        ; sprite 2 begin
+  870  00:C562  A2 04       LDX #$04  ; sprite 2 mem offset
+  871  00:C564  AD 0D 00    LDA paddle1ytop 
+  872  00:C567  18          CLC
+  873  00:C568  69 08       ADC #$08  ; sprite 2 y = y + 8
+  874  00:C56A  9D 04 02    STA $204,x
+  875  00:C56D  A9 20       LDA #$20  ; sprite 2 tile
+  876  00:C56F  9D 05 02    STA $205,x
+  877  00:C572  A9 01       LDA #$01  ; sprite 2 attr
+  878  00:C574  9D 06 02    STA $206,x
+  879  00:C577  A9 08       LDA #PADDLE1X
+  880  00:C579  9D 07 02    STA $207,x
+  881                        ; sprite 3 begin
+  882  00:C57C  A2 08       LDX #$08  ; sprite 3 mem offset
+  883  00:C57E  AD 0D 00    LDA paddle1ytop 
+  884  00:C581  18          CLC
+  885  00:C582  69 10       ADC #$10  ; sprite 2 y = y + 16
+  886  00:C584  9D 04 02    STA $204,x
+  887  00:C587  A9 30       LDA #$30  ; sprite 3 tile
+  888  00:C589  9D 05 02    STA $205,x
+  889  00:C58C  A9 01       LDA #$01  ; sprite 3 attr
+  890  00:C58E  9D 06 02    STA $206,x
+  891  00:C591  A9 08       LDA #PADDLE1X
+  892  00:C593  9D 07 02    STA $207,x
+  893                        ; sprite 4 begin
+  894  00:C596  A2 0C       LDX #$0C  ; sprite 4 mem offset
+  895  00:C598  AD 0D 00    LDA paddle1ytop 
+  896  00:C59B  18          CLC
+  897  00:C59C  69 18       ADC #$18  ; sprite 2 y = y + 24
+  898  00:C59E  9D 04 02    STA $204,x
+  899  00:C5A1  A9 40       LDA #$40  ; sprite 4 tile
+  900  00:C5A3  9D 05 02    STA $205,x
+  901  00:C5A6  A9 01       LDA #$01  ; sprite 4 attr
+  902  00:C5A8  9D 06 02    STA $206,x
+  903  00:C5AB  A9 08       LDA #PADDLE1X
+  904  00:C5AD  9D 07 02    STA $207,x
+  905                       
+  906                       ;;;;;;;; paddle 2 sprites
+  907                       ; sprite 1 begin
+  908  00:C5B0  A2 10       LDX #$10  ; sprite 1 mem offset
+  909  00:C5B2  AD 0E 00    LDA paddle2ytop ; sprite 1 y 
+  910  00:C5B5  9D 04 02    STA $204,x  
+  911  00:C5B8  A9 10       LDA #$10  ; sprite 1 tile
+  912  00:C5BA  9D 05 02    STA $205,x
+  913  00:C5BD  A9 42       LDA #%01000010 ; sprite 1 attr
+  914  00:C5BF  9D 06 02    STA $206,x
+  915  00:C5C2  A9 F0       LDA #PADDLE2X
+  916  00:C5C4  9D 07 02    STA $207,x
+  917                        ; sprite 2 begin
+  918  00:C5C7  A2 14       LDX #$14  ; sprite 2 mem offset
+  919  00:C5C9  AD 0E 00    LDA paddle2ytop 
+  920  00:C5CC  18          CLC
+  921  00:C5CD  69 08       ADC #$08  ; sprite 2 y = y + 8
+  922  00:C5CF  9D 04 02    STA $204,x
+  923  00:C5D2  A9 20       LDA #$20  ; sprite 2 tile
+  924  00:C5D4  9D 05 02    STA $205,x
+  925  00:C5D7  A9 42       LDA #%01000010 ; sprite 2 attr
+  926  00:C5D9  9D 06 02    STA $206,x
+  927  00:C5DC  A9 F0       LDA #PADDLE2X
+  928  00:C5DE  9D 07 02    STA $207,x
+  929                        ; sprite 3 begin
+  930  00:C5E1  A2 18       LDX #$18  ; sprite 3 mem offset
+  931  00:C5E3  AD 0E 00    LDA paddle2ytop 
+  932  00:C5E6  18          CLC
+  933  00:C5E7  69 10       ADC #$10  ; sprite 2 y = y + 16
+  934  00:C5E9  9D 04 02    STA $204,x
+  935  00:C5EC  A9 30       LDA #$30  ; sprite 3 tile
+  936  00:C5EE  9D 05 02    STA $205,x
+  937  00:C5F1  A9 42       LDA #%01000010 ; sprite 3 attr
+  938  00:C5F3  9D 06 02    STA $206,x
+  939  00:C5F6  A9 F0       LDA #PADDLE2X
+  940  00:C5F8  9D 07 02    STA $207,x
+  941                        ; sprite 4 begin
+  942  00:C5FB  A2 1C       LDX #$1C  ; sprite 4 mem offset
+  943  00:C5FD  AD 0E 00    LDA paddle2ytop 
+  944  00:C600  18          CLC
+  945  00:C601  69 18       ADC #$18  ; sprite 2 y = y + 24
+  946  00:C603  9D 04 02    STA $204,x
+  947  00:C606  A9 40       LDA #$40  ; sprite 4 tile
+  948  00:C608  9D 05 02    STA $205,x
+  949  00:C60B  A9 42       LDA #%01000010  ; sprite 4 attr
+  950  00:C60D  9D 06 02    STA $206,x
+  951  00:C610  A9 F0       LDA #PADDLE2X
+  952  00:C612  9D 07 02    STA $207,x
+  953                       
+  954  00:C615  60          RTS
+  955                      
+  956                     ; arg_1 (IN) score to display
+  957                     ; arg_2 (IN) x position to display
+  958  00:C616            RT_DrawScore: ;;#ROUTINE_START  ;; TODO - Refactor and properly finish this function! (Do a DrawMetaTile function)
+  959                     
+  960  00:C616  20 F4 C6    JSR RT_BinTo2Dec ; TODO - DEBUG THIS FUNC! IT MAKES THE GAME CRASH!
+  961                       ; var_1 = score tens
+  962                       ; var_2 = score ones
+  963                       ;LDA #$01
+  964                       ;STA var_1 
+  965                       
+  966  00:C619  A9 00       LDA #$00
+  967  00:C61B  A2 00       LDX #$00  
+  968  00:C61D            DrawScore_CalcTensCharOffset:
+  969  00:C61D  EC 1C 00    CPX var_2
+  970  00:C620  F0 07       BEQ DrawScore_DrawTens
+  971  00:C622  18          CLC
+  972  00:C623  69 0C       ADC #$0C   ; Jump to next letter (size 12)
+  973  00:C625  E8          INX
+  974  00:C626  4C 1D C6    JMP DrawScore_CalcTensCharOffset
+  975                       
+  976  00:C629            DrawScore_DrawTens:
+  977  00:C629  AA          TAX        ; x = char offset
+  978  00:C62A  A0 00       LDY #$00   ; y = curr line drawing
+  979  00:C62C  A9 80       LDA #LOW(SCOREYPOS)
+  980  00:C62E  18          CLC
+  981  00:C62F  6D 17 00    ADC arg_2  ; low-byte = low-byte + x position
+  982  00:C632  8D 1D 00    STA var_3  ; var_3 = low-byte PPU address
+  983  00:C635  A9 20       LDA #HIGH(SCOREYPOS)
+  984  00:C637  8D 1E 00    STA var_4  ; var_4 = high-byte PPU address
+  985  00:C63A            DrawScore_DrawTensLine:
+  986  00:C63A  AD 02 20    LDA $2002             ; read PPU status to reset the high/low latch
+  987  00:C63D  AD 1E 00    LDA var_4
+  988  00:C640  8D 06 20    STA $2006            
+  989  00:C643  AD 1D 00    LDA var_3
+  990  00:C646  8D 06 20    STA $2006
+  991                     
+  992  00:C649  BD 8C E0    LDA numberdata_0,x
+  993  00:C64C  8D 07 20    STA $2007
+  994  00:C64F  E8          INX
+  995  00:C650  BD 8C E0    LDA numberdata_0,x
+  996  00:C653  8D 07 20    STA $2007
+  997  00:C656  E8          INX
+  998  00:C657  BD 8C E0    LDA numberdata_0,x
+  999  00:C65A  8D 07 20    STA $2007
+ 1000  00:C65D  E8          INX
+ 1001                       
+ 1002  00:C65E  AD 1D 00    LDA var_3
+ 1003  00:C661  18          CLC
+ 1004  00:C662  69 20       ADC #$20 
+ 1005  00:C664  8D 1D 00    STA var_3 ; Add a line to the PPU offset (low byte)
+ 1006  00:C667  AD 1E 00    LDA var_4
+ 1007  00:C66A  69 00       ADC #$00
+ 1008  00:C66C  8D 1E 00    STA var_4 ; Add the carry to the high byte if there is one
+ 1009                       
+ 1010  00:C66F  C8          INY
+ 1011  00:C670  C0 04       CPY #$04
+ 1012  00:C672  D0 C6       BNE DrawScore_DrawTensLine ; stop on 4th line
+ 1013                       
+ 1014  00:C674  A9 00       LDA #$00
+ 1015  00:C676  8D 05 20    STA $2005
+ 1016  00:C679  8D 05 20    STA $2005
+ 1017                     
+ 1018  00:C67C  60          RTS
+ 1019                       
+ 1020                       
+ 1021                     ; arg_1 (IN) x position to display
+ 1022  00:C67D            RT_EraseScore: ;;#ROUTINE_START  ;; TODO - Refactor and properly finish this function! (Do a EraseTiles function)
+ 1023                     
+ 1024  00:C67D  A0 00       LDY #$00   ; y = curr line drawing
+ 1025  00:C67F  A9 80       LDA #LOW(SCOREYPOS)
+ 1026  00:C681  18          CLC
+ 1027  00:C682  6D 16 00    ADC arg_1  ; low-byte = low-byte + x position
+ 1028  00:C685  8D 1D 00    STA var_3  ; var_3 = low-byte PPU address
+ 1029  00:C688  A9 20       LDA #HIGH(SCOREYPOS)
+ 1030  00:C68A  8D 1E 00    STA var_4  ; var_4 = high-byte PPU address
+ 1031  00:C68D            EraseScore_Loop:
+ 1032  00:C68D  AD 02 20    LDA $2002             ; read PPU status to reset the high/low latch
+ 1033  00:C690  AD 1E 00    LDA var_4
+ 1034  00:C693  8D 06 20    STA $2006            
+ 1035  00:C696  AD 1D 00    LDA var_3
+ 1036  00:C699  8D 06 20    STA $2006
+ 1037                     
+ 1038  00:C69C  A9 00       LDA #$00
+ 1039  00:C69E  8D 07 20    STA $2007
+ 1040  00:C6A1  8D 07 20    STA $2007
+ 1041  00:C6A4  8D 07 20    STA $2007
+ 1042                     
+ 1043  00:C6A7  AD 1D 00    LDA var_3
+ 1044  00:C6AA  18          CLC
+ 1045  00:C6AB  69 20       ADC #$20 
+ 1046  00:C6AD  8D 1D 00    STA var_3 ; Add a line to the PPU offset (low byte)
+ 1047  00:C6B0  AD 1E 00    LDA var_4
+ 1048  00:C6B3  69 00       ADC #$00
+ 1049  00:C6B5  8D 1E 00    STA var_4 ; Add the carry to the high byte if there is one
+ 1050                       
+ 1051  00:C6B8  C8          INY
+ 1052  00:C6B9  C0 04       CPY #$04
+ 1053  00:C6BB  D0 D0       BNE EraseScore_Loop ; stop on 4th line
+ 1054                       
+ 1055  00:C6BD  A9 00       LDA #$00
+ 1056  00:C6BF  8D 05 20    STA $2005
+ 1057  00:C6C2  8D 05 20    STA $2005
+ 1058                     
+ 1059  00:C6C5  60          RTS
+ 1060                      
+ 1061  00:C6C6            RT_ReadController1: ;;#ROUTINE_START
+ 1062  00:C6C6  A9 01       LDA #$01
+ 1063  00:C6C8  8D 16 40    STA $4016
+ 1064  00:C6CB  A9 00       LDA #$00
+ 1065  00:C6CD  8D 16 40    STA $4016
+ 1066  00:C6D0  A2 08       LDX #$08
+ 1067  00:C6D2            ReadController1Loop:
+ 1068  00:C6D2  AD 16 40    LDA $4016
+ 1069  00:C6D5  4A          LSR A            ; bit0 -> Carry
+ 1070  00:C6D6  2E 0F 00    ROL buttons1     ; bit0 <- Carry
+ 1071  00:C6D9  CA          DEX
+ 1072  00:C6DA  D0 F6       BNE ReadController1Loop
+ 1073  00:C6DC  60          RTS
+ 1074                       
+ 1075  00:C6DD            RT_ReadController2: ;;#ROUTINE_START
+ 1076  00:C6DD  A9 01       LDA #$01
+ 1077  00:C6DF  8D 16 40    STA $4016
+ 1078  00:C6E2  A9 00       LDA #$00
+ 1079  00:C6E4  8D 16 40    STA $4016
+ 1080  00:C6E7  A2 08       LDX #$08
+ 1081  00:C6E9            ReadController2Loop:
+ 1082  00:C6E9  AD 17 40    LDA $4017
+ 1083  00:C6EC  4A          LSR A            ; bit0 -> Carry
+ 1084  00:C6ED  2E 10 00    ROL buttons2     ; bit0 <- Carry
+ 1085  00:C6F0  CA          DEX
+ 1086  00:C6F1  D0 F6       BNE ReadController2Loop
+ 1087  00:C6F3  60          RTS  
+ 1088                       
+ 1089                     
+ 1090                     ; arg_1 (IN)  = The hex number to convert
+ 1091                     ; var_1 (OUT) = The tens digit
+ 1092                     ; var_2 (OUT) = The ones digit
+ 1093  00:C6F4            RT_BinTo2Dec ;;#ROUTINE_START
+ 1094  00:C6F4  A2 00         LDX #$00   ; X = tens
+ 1095  00:C6F6  AD 16 00      LDA arg_1
+ 1096  00:C6F9  C9 0A         CMP #$0A
+ 1097  00:C6FB  90 0B         BCC CountOnes
+ 1098                         
+ 1099  00:C6FD            CountTens:
+ 1100  00:C6FD  E8            INX
+ 1101  00:C6FE  38            SEC
+ 1102  00:C6FF  E9 0A         SBC #$0A
+ 1103  00:C701  C9 0A         CMP #$0A
+ 1104  00:C703  90 03         BCC CountOnes
+ 1105  00:C705  4C FD C6      JMP CountTens
+ 1106                         
+ 1107  00:C708            CountOnes:
+ 1108  00:C708  8E 1B 00      STX var_1
+ 1109  00:C70B  8D 1C 00      STA var_2
+ 1110                         
+ 1111  00:C70E  60            RTS
+ 1112                         
+ 1113  00:C70F            RT_InitPlaySpaceBG: ;;#ROUTINE_START
+ 1114  00:C70F  AD 02 20      LDA $2002   ; read PPU status to reset the high/low latch
+ 1115                         
+ 1116  00:C712  A9 20         LDA #$20
+ 1117  00:C714  8D 1C 00      STA var_2   ; var_2 = high byte of PPU address
+ 1118  00:C717  A9 0F         LDA #$0F
+ 1119  00:C719  8D 1B 00      STA var_1   ; var_1 = low byte of PPU address
+ 1120                     
+ 1121  00:C71C  A2 00         LDX #$00
+ 1122                         
+ 1123  00:C71E            .InitPlaySpaceBG_TileLoop:
+ 1124  00:C71E  AD 1C 00      LDA var_2
+ 1125  00:C721  8D 06 20      STA $2006            ; set high byte write address 
+ 1126  00:C724  AD 1B 00      LDA var_1
+ 1127  00:C727  8D 06 20      STA $2006            ; set low byte write address
+ 1128                     
+ 1129                         
+ 1130  00:C72A  18            CLC
+ 1131  00:C72B  69 01         ADC #$01
+ 1132  00:C72D  8D 1B 00      STA var_1             ; increment low byte
+ 1133  00:C730  AD 1C 00      LDA var_2
+ 1134  00:C733  69 00         ADC #$00              ; push carry to high byte
+ 1135  00:C735  8D 1C 00      STA var_2
+ 1136                         
+ 1137  00:C738  A9 08         LDA #$08
+ 1138  00:C73A  8D 07 20      STA $2007
+ 1139                       
+ 1140  00:C73D  AD 1C 00      LDA var_2
+ 1141  00:C740  8D 06 20      STA $2006            ; set high byte write address 
+ 1142  00:C743  AD 1B 00      LDA var_1
+ 1143  00:C746  8D 06 20      STA $2006            ; set low byte write address
+ 1144                         
+ 1145  00:C749  18            CLC
+ 1146  00:C74A  69 1F         ADC #$1F
+ 1147  00:C74C  8D 1B 00      STA var_1             ; increment low byte
+ 1148  00:C74F  AD 1C 00      LDA var_2
+ 1149  00:C752  69 00         ADC #$00              ; push carry to high byte
+ 1150  00:C754  8D 1C 00      STA var_2
+ 1151                         
+ 1152  00:C757  A9 09         LDA #$09
+ 1153  00:C759  8D 07 20      STA $2007 
+ 1154                         
+ 1155  00:C75C  E8            INX
+ 1156  00:C75D  E0 1E         CPX #30
+ 1157  00:C75F  F0 03         BEQ .InitPlaySpaceBG_TileDone
+ 1158  00:C761  4C 1E C7      JMP .InitPlaySpaceBG_TileLoop
+ 1159                         
+ 1160  00:C764            .InitPlaySpaceBG_TileDone:    ; Copy palette
+ 1161                         
+ 1162  00:C764  A9 23         LDA #$23
+ 1163  00:C766  8D 1C 00      STA var_2   ; var_2 = high byte of PPU address
+ 1164  00:C769  A9 C3         LDA #$C3
+ 1165  00:C76B  8D 1B 00      STA var_1   ; var_1 = low byte of PPU address
+ 1166                     
+ 1167  00:C76E  A2 00         LDX #$00
+ 1168  00:C770            .InitPlaySpaceBG_AttrLoop:
+ 1169  00:C770  AD 1C 00      LDA var_2
+ 1170  00:C773  8D 06 20      STA $2006            ; set high byte write address 
+ 1171  00:C776  AD 1B 00      LDA var_1
+ 1172  00:C779  8D 06 20      STA $2006            ; set low byte write address
+ 1173                         
+ 1174  00:C77C  18            CLC
+ 1175  00:C77D  69 01         ADC #$01
+ 1176  00:C77F  8D 1B 00      STA var_1             ; increment low byte
+ 1177  00:C782  AD 1C 00      LDA var_2
+ 1178  00:C785  69 00         ADC #$00              ; push carry to high byte
+ 1179  00:C787  8D 1C 00      STA var_2
+ 1180                         
+ 1181  00:C78A  A9 55         LDA #%01010101
+ 1182  00:C78C  8D 07 20      STA $2007
+ 1183                         
+ 1184  00:C78F  AD 1C 00      LDA var_2
+ 1185  00:C792  8D 06 20      STA $2006            ; set high byte write address 
+ 1186  00:C795  AD 1B 00      LDA var_1
+ 1187  00:C798  8D 06 20      STA $2006            ; set low byte write address
+ 1188                         
+ 1189  00:C79B  18            CLC
+ 1190  00:C79C  69 07         ADC #$07
+ 1191  00:C79E  8D 1B 00      STA var_1             ; increment low byte
+ 1192  00:C7A1  AD 1C 00      LDA var_2
+ 1193  00:C7A4  69 00         ADC #$00              ; push carry to high byte
+ 1194  00:C7A6  8D 1C 00      STA var_2
+ 1195                         
+ 1196  00:C7A9  A9 55         LDA #%01010101
+ 1197  00:C7AB  8D 07 20      STA $2007
+ 1198                         
+ 1199  00:C7AE  E8            INX
+ 1200  00:C7AF  E0 08         CPX #$08
+ 1201  00:C7B1  D0 BD         BNE .InitPlaySpaceBG_AttrLoop
+ 1202                         
+ 1203  00:C7B3  60            RTS
+ 1204                       
+ 1205                     ;;;;;;;;;;;;;;  
+ 1206                       
+ 1207                     
+ 1208                       
+ 1209           0001        .bank 1
+ 1210           E000        .org $E000
+ 1211  01:E000            palette:
+ 1212  01:E000              .incbin "custom.chr.dat"
+ 1213                     
+ 1214  01:E020            ballleveluptable:
+ 1215  01:E020  02 03 03      .db 2,3,3,3,4,5,7,8
+       01:E023  03 04 05  
+       01:E026  07 08     
+ 1216  01:E028            paddlehitspeeds:
+ 1217  01:E028  1C 30        .db $1c,$30   ; 3.5 * cos(60.0), 3.5 * sin(60.0) in fixed 4.4
+ 1218  01:E02A  28 28        .db $28,$28   ; 3.5 * cos(45.0), 3.5 * sin(45.0) in fixed 4.4
+ 1219  01:E02C  30 1C        .db $30,$1c   ; 3.5 * cos(30.0), 3.5 * sin(30.0) in fixed 4.4
+ 1220  01:E02E  35 13        .db $35,$13   ; 3.5 * cos(20.0), 3.5 * sin(20.0) in fixed 4.4
+ 1221  01:E030  37 0A        .db $37,$0a   ; 3.5 * cos(10.0), 3.5 * sin(10.0) in fixed 4.4
+ 1222  01:E032  1E 35        .db $1e,$35   ; 3.8 * cos(60.0), 3.8 * sin(60.0) in fixed 4.4
+ 1223  01:E034  2B 2B        .db $2b,$2b   ; 3.8 * cos(45.0), 3.8 * sin(45.0) in fixed 4.4
+ 1224  01:E036  35 1E        .db $35,$1e   ; 3.8 * cos(30.0), 3.8 * sin(30.0) in fixed 4.4
+ 1225  01:E038  39 15        .db $39,$15   ; 3.8 * cos(20.0), 3.8 * sin(20.0) in fixed 4.4
+ 1226  01:E03A  3C 0B        .db $3c,$0b   ; 3.8 * cos(10.0), 3.8 * sin(10.0) in fixed 4.4
+ 1227  01:E03C  21 39        .db $21,$39   ; 4.1 * cos(60.0), 4.1 * sin(60.0) in fixed 4.4
+ 1228  01:E03E  2E 2E        .db $2e,$2e   ; 4.1 * cos(45.0), 4.1 * sin(45.0) in fixed 4.4
+ 1229  01:E040  39 21        .db $39,$21   ; 4.1 * cos(30.0), 4.1 * sin(30.0) in fixed 4.4
+ 1230  01:E042  3E 16        .db $3e,$16   ; 4.1 * cos(20.0), 4.1 * sin(20.0) in fixed 4.4
+ 1231  01:E044  41 0B        .db $41,$0b   ; 4.1 * cos(10.0), 4.1 * sin(10.0) in fixed 4.4
+ 1232  01:E046  23 3D        .db $23,$3d   ; 4.4 * cos(60.0), 4.4 * sin(60.0) in fixed 4.4
+ 1233  01:E048  32 32        .db $32,$32   ; 4.4 * cos(45.0), 4.4 * sin(45.0) in fixed 4.4
+ 1234  01:E04A  3D 23        .db $3d,$23   ; 4.4 * cos(30.0), 4.4 * sin(30.0) in fixed 4.4
+ 1235  01:E04C  42 18        .db $42,$18   ; 4.4 * cos(20.0), 4.4 * sin(20.0) in fixed 4.4
+ 1236  01:E04E  45 0C        .db $45,$0c   ; 4.4 * cos(10.0), 4.4 * sin(10.0) in fixed 4.4
+ 1237  01:E050  26 41        .db $26,$41   ; 4.7 * cos(60.0), 4.7 * sin(60.0) in fixed 4.4
+ 1238  01:E052  35 35        .db $35,$35   ; 4.7 * cos(45.0), 4.7 * sin(45.0) in fixed 4.4
+ 1239  01:E054  41 26        .db $41,$26   ; 4.7 * cos(30.0), 4.7 * sin(30.0) in fixed 4.4
+ 1240  01:E056  47 1A        .db $47,$1a   ; 4.7 * cos(20.0), 4.7 * sin(20.0) in fixed 4.4
+ 1241  01:E058  4A 0D        .db $4a,$0d   ; 4.7 * cos(10.0), 4.7 * sin(10.0) in fixed 4.4
+ 1242  01:E05A  28 45        .db $28,$45   ; 5.0 * cos(60.0), 5.0 * sin(60.0) in fixed 4.4
+ 1243  01:E05C  39 39        .db $39,$39   ; 5.0 * cos(45.0), 5.0 * sin(45.0) in fixed 4.4
+ 1244  01:E05E  45 28        .db $45,$28   ; 5.0 * cos(30.0), 5.0 * sin(30.0) in fixed 4.4
+ 1245  01:E060  4B 1B        .db $4b,$1b   ; 5.0 * cos(20.0), 5.0 * sin(20.0) in fixed 4.4
+ 1246  01:E062  4F 0E        .db $4f,$0e   ; 5.0 * cos(10.0), 5.0 * sin(10.0) in fixed 4.4
+ 1247  01:E064  2A 49        .db $2a,$49   ; 5.3 * cos(60.0), 5.3 * sin(60.0) in fixed 4.4
+ 1248  01:E066  3C 3C        .db $3c,$3c   ; 5.3 * cos(45.0), 5.3 * sin(45.0) in fixed 4.4
+ 1249  01:E068  49 2A        .db $49,$2a   ; 5.3 * cos(30.0), 5.3 * sin(30.0) in fixed 4.4
+ 1250  01:E06A  50 1D        .db $50,$1d   ; 5.3 * cos(20.0), 5.3 * sin(20.0) in fixed 4.4
+ 1251  01:E06C  54 0F        .db $54,$0f   ; 5.3 * cos(10.0), 5.3 * sin(10.0) in fixed 4.4
+ 1252  01:E06E  2D 4E        .db $2d,$4e   ; 5.6 * cos(60.0), 5.6 * sin(60.0) in fixed 4.4
+ 1253  01:E070  3F 3F        .db $3f,$3f   ; 5.6 * cos(45.0), 5.6 * sin(45.0) in fixed 4.4
+ 1254  01:E072  4E 2D        .db $4e,$2d   ; 5.6 * cos(30.0), 5.6 * sin(30.0) in fixed 4.4
+ 1255  01:E074  54 1F        .db $54,$1f   ; 5.6 * cos(20.0), 5.6 * sin(20.0) in fixed 4.4
+ 1256  01:E076  58 10        .db $58,$10   ; 5.6 * cos(10.0), 5.6 * sin(10.0) in fixed 4.4
+ 1257  01:E078  2F 52        .db $2f,$52   ; 5.9 * cos(60.0), 5.9 * sin(60.0) in fixed 4.4
+ 1258  01:E07A  43 43        .db $43,$43   ; 5.9 * cos(45.0), 5.9 * sin(45.0) in fixed 4.4
+ 1259  01:E07C  52 2F        .db $52,$2f   ; 5.9 * cos(30.0), 5.9 * sin(30.0) in fixed 4.4
+ 1260  01:E07E  59 20        .db $59,$20   ; 5.9 * cos(20.0), 5.9 * sin(20.0) in fixed 4.4
+ 1261  01:E080  5D 10        .db $5d,$10   ; 5.9 * cos(10.0), 5.9 * sin(10.0) in fixed 4.4
+ 1262  01:E082  32 56        .db $32,$56   ; 6.2 * cos(60.0), 6.2 * sin(60.0) in fixed 4.4
+ 1263  01:E084  46 46        .db $46,$46   ; 6.2 * cos(45.0), 6.2 * sin(45.0) in fixed 4.4
+ 1264  01:E086  56 32        .db $56,$32   ; 6.2 * cos(30.0), 6.2 * sin(30.0) in fixed 4.4
+ 1265  01:E088  5D 22        .db $5d,$22   ; 6.2 * cos(20.0), 6.2 * sin(20.0) in fixed 4.4
+ 1266  01:E08A  62 11        .db $62,$11   ; 6.2 * cos(10.0), 6.2 * sin(10.0) in fixed 4.4
+ 1267                     
+ 1268                     
+ 1269                     
+ 1270                     
+ 1271                     ;palettehitspeeds:
+ 1272                     ;   .db 24,42       ; 3 * (60 deg) in fixed 4.4
+ 1273                     ;   .db 34,34       ; 3 * (45 deg) in fixed 4.4
+ 1274                     ;   .db 42,24       ; 3 * (30 deg) in fixed 4.4
+ 1275                     ;   .db 45,16        ; 3 * (20 deg) in fixed 4.4
+ 1276                     ;   .db 47,8      ; 3 * (10 deg) in fixed 4.4
+ 1277                     
+ 1278                        
+ 1279  01:E08C            numberdata_0:
+ 1280  01:E08C  03 02 04     .db $03,$02,$04
+ 1281  01:E08F  01 00 01     .db $01,$00,$01
+ 1282  01:E092  01 00 01     .db $01,$00,$01
+ 1283  01:E095  05 02 06     .db $05,$02,$06
+ 1284  01:E098            numberdata_1:
+ 1285  01:E098  03 01 00     .db $03,$01,$00
+ 1286  01:E09B  07 01 00     .db $07,$01,$00
+ 1287  01:E09E  00 01 00     .db $00,$01,$00
+ 1288  01:E0A1  02 02 02     .db $02,$02,$02
+ 1289  01:E0A4            numberdata_2:
+ 1290  01:E0A4  03 02 04     .db $03,$02,$04
+ 1291  01:E0A7  07 00 01     .db $07,$00,$01
+ 1292  01:E0AA  03 02 06     .db $03,$02,$06
+ 1293  01:E0AD  02 02 02     .db $02,$02,$02
+ 1294  01:E0B0            numberdata_3:
+ 1295  01:E0B0  02 02 04     .db $02,$02,$04
+ 1296  01:E0B3  00 02 01     .db $00,$02,$01
+ 1297  01:E0B6  00 00 01     .db $00,$00,$01
+ 1298  01:E0B9  02 02 06     .db $02,$02,$06
+ 1299  01:E0BC            numberdata_4:
+ 1300  01:E0BC  01 00 01     .db $01,$00,$01
+ 1301  01:E0BF  02 02 01     .db $02,$02,$01
+ 1302  01:E0C2  00 00 01     .db $00,$00,$01
+ 1303  01:E0C5  00 00 02     .db $00,$00,$02
+ 1304  01:E0C8            numberdata_5:
+ 1305  01:E0C8  01 02 02     .db $01,$02,$02
+ 1306  01:E0CB  02 02 04     .db $02,$02,$04
+ 1307  01:E0CE  00 00 01     .db $00,$00,$01
+ 1308  01:E0D1  02 02 06     .db $02,$02,$06
+ 1309  01:E0D4            numberdata_6:
+ 1310  01:E0D4  03 02 04     .db $03,$02,$04
+ 1311  01:E0D7  01 00 07     .db $01,$00,$07
+ 1312  01:E0DA  01 02 04     .db $01,$02,$04
+ 1313  01:E0DD  05 02 06     .db $05,$02,$06
+ 1314  01:E0E0            numberdata_7:
+ 1315  01:E0E0  03 02 01     .db $03,$02,$01
+ 1316  01:E0E3  00 00 01     .db $00,$00,$01
+ 1317  01:E0E6  00 00 01     .db $00,$00,$01
+ 1318  01:E0E9  00 00 02     .db $00,$00,$02
+ 1319  01:E0EC            numberdata_8:
+ 1320  01:E0EC  03 02 04     .db $03,$02,$04
+ 1321  01:E0EF  01 02 01     .db $01,$02,$01
+ 1322  01:E0F2  01 00 01     .db $01,$00,$01
+ 1323  01:E0F5  05 02 06     .db $05,$02,$06
+ 1324  01:E0F8            numberdata_9:
+ 1325  01:E0F8  03 02 04     .db $03,$02,$04
+ 1326  01:E0FB  01 07 01     .db $01,$07,$01
+ 1327  01:E0FE  05 02 01     .db $05,$02,$01
+ 1328  01:E101  02 02 06     .db $02,$02,$06
+ 1329                        
+ 1330           FFFA        .org $FFFA     ;first of the three vectors starts here
+ 1331  01:FFFA  1F C1       .dw NMI        ;when an NMI happens (once per frame if enabled) the 
+ 1332                                        ;processor will jump to the label NMI:
+ 1333  01:FFFC  00 C0       .dw RESET      ;when the processor first turns on or is reset, it will jump
+ 1334                                        ;to the label RESET:
+ 1335  01:FFFE  00 00       .dw 0          ;external interrupt IRQ is not used in this tutorial
+ 1336                         
+ 1337                          
+ 1338           0002        .bank 2
+ 1339           0000        .org $0000
+ 1340  02:0000              .incbin "custom.chr"   ;includes 8KB graphics file from SMB1
