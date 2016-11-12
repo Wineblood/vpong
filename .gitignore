@@ -1,4 +1,5 @@
 *.lst
 *.deb
 *.fns
+*.nes
 tools\anglegrinder\out.txt
