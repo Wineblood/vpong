@@ -1,77 +1,105 @@
-  .inesprg 1   ; 1x 16KB PRG code
-  .ineschr 1   ; 1x  8KB CHR data
-  .inesmap 0   ; mapper 0 = NROM, no bank swapping
-  .inesmir 1   ; background mirroring
-  
+;----------------------------------------------------------------
+; constants
+;----------------------------------------------------------------
+
+PRG_COUNT = 1 ;1 = 16KB, 2 = 32KB
+MIRRORING = %0001 ;%0000 = horizontal, %0001 = vertical, %1000 = four-screen
+
+;----------------------------------------------------------------
+; variables
+;----------------------------------------------------------------
+
+
+   ;NOTE: declare variables using the DSB and DSW directives, like this:
+
+   ;MyVariable0 .dsb 1
+   ;MyVariable1 .dsb 3
+
+   ;NOTE: you can also split the variable declarations into individual pages, like this:
+
+   ;.enum $0100
+   ;.ende
+
+   ;.enum $0200
+   ;.ende
+
+;----------------------------------------------------------------
+; iNES header
+;----------------------------------------------------------------
+
+    .db "NES", $1a ;identification of the iNES header
+    .db PRG_COUNT ;number of 16KB PRG-ROM pages
+    .db $01 ;number of 8KB CHR-ROM pages
+    .db $00|MIRRORING ;mapper 0 and mirroring
+    .dsb 9, $00 ;clear the remaining bytes
+
 
 ;;;;;;;;;;;;;;;
 ;; DECLARE SOME VARIABLES HERE
-  .rsset $0000  ;;start variables at ram location 0
-  
-gamestate  .rs 1  ; .rs 1 means reserve one byte of space
-ballx      .rs 1  ; ball horizontal position
-bally      .rs 1  ; ball vertical position
-ballup     .rs 1  ; 1 = ball moving up
-balldown   .rs 1  ; 1 = ball moving down
-ballleft   .rs 1  ; 1 = ball moving left
-ballright  .rs 1  ; 1 = ball moving right
-ballspeedx .rs 1  ; ball horizontal speed per frame (integer updated every frame)
-ballspeedy .rs 1  ; ball vertical speed per frame (integer updated every frame)
-ballspeedx_fixed .rs 1 ; ball horizontal speed per frame (fixed 4.4 - added to accumulator every frame)
-ballspeedy_fixed .rs 1 ; ball vertical speed per frame (fixed 4.4 - added to accumulator every frame)
-ballspeedx_fixedacc .rs 1 ; fixed point accumulator for x speed of ball (fixed 4.4 - used to conserve fraction values between frames)
-ballspeedy_fixedacc .rs 1  ; fixed point accumulator for x speed of ball (fixed 4.4 - used to conserve fraction values between frames)
-paddle1ytop          .rs 1  ; player 1 paddle top vertical position
-paddle2ytop          .rs 1  ; player 1 paddle top vertical position
-buttons1   .rs 1  ; player 1 gamepad buttons, one bit per button
-buttons2   .rs 1  ; player 2 gamepad buttons, one bit per button
-score1     .rs 1  ; player 1 score, 0-15
-score2     .rs 1  ; player 2 score, 0-15
-p1lastscored .rs 1
-ballspeedlevel .rs 1
-ballspeedprogress .rs 1
-arg_1      .rs 1
-arg_2      .rs 1
-arg_3      .rs 1
-arg_4      .rs 1
-arg_5      .rs 1
-var_1      .rs 1
-var_2      .rs 1
-var_3      .rs 1
-var_4      .rs 1
-var_5      .rs 1
+
+    .enum $0000
+    
+    gamestate            .dsb 1  ; .rs 1 means reserve one byte of space
+    ballx                .dsb 1  ; ball horizontal position
+    bally                .dsb 1  ; ball vertical position
+    ballup               .dsb 1  ; 1 = ball moving up
+    balldown             .dsb 1  ; 1 = ball moving down
+    ballleft             .dsb 1  ; 1 = ball moving left
+    ballright            .dsb 1  ; 1 = ball moving right
+    ballspeedx           .dsb 1  ; ball horizontal speed per frame (integer updated every frame)
+    ballspeedy           .dsb 1  ; ball vertical speed per frame (integer updated every frame)
+    ballspeedx_fixed     .dsb 1 ; ball horizontal speed per frame (fixed 4.4 - added to accumulator every frame)
+    ballspeedy_fixed     .dsb 1 ; ball vertical speed per frame (fixed 4.4 - added to accumulator every frame)
+    ballspeedx_fixedacc  .dsb 1 ; fixed point accumulator for x speed of ball (fixed 4.4 - used to conserve fraction values between frames)
+    ballspeedy_fixedacc  .dsb 1  ; fixed point accumulator for x speed of ball (fixed 4.4 - used to conserve fraction values between frames)
+    paddle1ytop          .dsb 1  ; player 1 paddle top vertical position
+    paddle2ytop          .dsb 1  ; player 1 paddle top vertical position
+    buttons1             .dsb 1  ; player 1 gamepad buttons, one bit per button
+    buttons2             .dsb 1  ; player 2 gamepad buttons, one bit per button
+    score1               .dsb 1  ; player 1 score, 0-15
+    score2               .dsb 1  ; player 2 score, 0-15
+    p1lastscored         .dsb 1
+    ballspeedlevel       .dsb 1
+    ballspeedprogress    .dsb 1
+    arg_1                .dsb 1
+    arg_2                .dsb 1
+    arg_3                .dsb 1
+    arg_4                .dsb 1
+    arg_5                .dsb 1
+    var_1                .dsb 1
+    var_2                .dsb 1
+    var_3                .dsb 1
+    var_4                .dsb 1
+    var_5                .dsb 1
+    
+    .ende
 
 ;; DECLARE SOME CONSTANTS HERE
-STATETITLE     = $00  ; displaying title screen
-STATEPLAYING   = $01  ; move paddles/ball, check for collisions
-STATEGAMEOVER  = $02  ; displaying game over screen
-STATENEWBALL   = $03  ; wait for player to press button to release 
-
-TOPWALL        = $08
-BOTTOMWALL     = $E6
-  
-PADDLE1X       = $08  ; horizontal position for paddles, doesnt move
-PADDLE2X       = $F0
-
-PADDLESPEED    = $03
-PADDLEHEIGHT   = $20
-PADDLEWIDTH    = $08
-
-BALLSIZE     = $08
-NUMBEROFBALLLEVELS = $08
-
-SCOREXPOS_1P = $09
-SCOREXPOS_2P = $14   
-SCOREYPOS    = $2080   ; in ppu address (y = 4 in tiles)
+    STATETITLE     = $00  ; displaying title screen
+    STATEPLAYING   = $01  ; move paddles/ball, check for collisions
+    STATEGAMEOVER  = $02  ; displaying game over screen
+    STATENEWBALL   = $03  ; wait for player to press button to release 
+    
+    TOPWALL        = $08
+    BOTTOMWALL     = $E6
+    
+    PADDLE1X       = $08  ; horizontal position for paddles, doesnt move
+    PADDLE2X       = $F0
+    
+    PADDLESPEED    = $03
+    PADDLEHEIGHT   = $20
+    PADDLEWIDTH    = $08
+    
+    BALLSIZE     = $08
+    NUMBEROFBALLLEVELS = $08
+    
+    SCOREXPOS_1P = $09
+    SCOREXPOS_2P = $14   
+    SCOREYPOS    = $2080   ; in ppu address (y = 4 in tiles)
 
 ;;;;;;;;;;;;;;;;;;
 
-
-
-
-  .bank 0
   .org $C000 
-  .list
 RESET:
   SEI          ; disable IRQs
   CLD          ; disable decimal mode
@@ -292,9 +320,6 @@ GameEngineDone:
   JSR RT_UpdateSprites  ;;set ball/paddle sprites from positions
 
   RTI             ; return from interrupt
- 
- 
- 
  
 ;;;;;;;;
  
@@ -976,11 +1001,11 @@ DrawScore_CalcTensCharOffset:
 DrawScore_DrawTens:
   TAX        ; x = char offset
   LDY #$00   ; y = curr line drawing
-  LDA #LOW(SCOREYPOS)
+  LDA #<(SCOREYPOS)
   CLC
   ADC arg_2  ; low-byte = low-byte + x position
   STA var_3  ; var_3 = low-byte PPU address
-  LDA #HIGH(SCOREYPOS)
+  LDA #>(SCOREYPOS)
   STA var_4  ; var_4 = high-byte PPU address
 DrawScore_DrawTensLine:
   LDA $2002             ; read PPU status to reset the high/low latch
@@ -1022,11 +1047,11 @@ DrawScore_DrawTensLine:
 RT_EraseScore: ;;#ROUTINE_START  ;; TODO - Refactor and properly finish this function! (Do a EraseTiles function)
 
   LDY #$00   ; y = curr line drawing
-  LDA #LOW(SCOREYPOS)
+  LDA #<(SCOREYPOS)
   CLC
   ADC arg_1  ; low-byte = low-byte + x position
   STA var_3  ; var_3 = low-byte PPU address
-  LDA #HIGH(SCOREYPOS)
+  LDA #>(SCOREYPOS)
   STA var_4  ; var_4 = high-byte PPU address
 EraseScore_Loop:
   LDA $2002             ; read PPU status to reset the high/low latch
@@ -1120,12 +1145,11 @@ RT_InitPlaySpaceBG: ;;#ROUTINE_START
 
     LDX #$00
     
-.InitPlaySpaceBG_TileLoop:
+@InitPlaySpaceBG_TileLoop:
     LDA var_2
     STA $2006            ; set high byte write address 
     LDA var_1
     STA $2006            ; set low byte write address
-
     
     CLC
     ADC #$01
@@ -1154,18 +1178,18 @@ RT_InitPlaySpaceBG: ;;#ROUTINE_START
     
     INX
     CPX #30
-    BEQ .InitPlaySpaceBG_TileDone
-    JMP .InitPlaySpaceBG_TileLoop
+    BEQ @InitPlaySpaceBG_TileDone
+    JMP @InitPlaySpaceBG_TileLoop
     
-.InitPlaySpaceBG_TileDone:    ; Copy palette
-    
+@InitPlaySpaceBG_TileDone:    ; Copy palette
     LDA #$23
     STA var_2   ; var_2 = high byte of PPU address
     LDA #$C3
     STA var_1   ; var_1 = low byte of PPU address
 
     LDX #$00
-.InitPlaySpaceBG_AttrLoop:
+    
+@InitPlaySpaceBG_AttrLoop:
     LDA var_2
     STA $2006            ; set high byte write address 
     LDA var_1
@@ -1198,21 +1222,17 @@ RT_InitPlaySpaceBG: ;;#ROUTINE_START
     
     INX
     CPX #$08
-    BNE .InitPlaySpaceBG_AttrLoop
+    BNE @InitPlaySpaceBG_AttrLoop
     
     RTS
   
 ;;;;;;;;;;;;;;  
-  
-
-  
-  .bank 1
   .org $E000
 palette:
   .incbin "custom.chr.dat"
 
 ballleveluptable:
-    .db 2,3,3,3,4,5,7,8
+   .db 2,3,3,3,4,5,7,8
 paddlehitspeeds:
    .db $1c,$30   ; 3.5 * cos(60.0), 3.5 * sin(60.0) in fixed 4.4
    .db $28,$28   ; 3.5 * cos(45.0), 3.5 * sin(45.0) in fixed 4.4
@@ -1333,8 +1353,6 @@ numberdata_9:
   .dw RESET      ;when the processor first turns on or is reset, it will jump
                    ;to the label RESET:
   .dw 0          ;external interrupt IRQ is not used in this tutorial
-    
-     
-  .bank 2
-  .org $0000
+
+  
   .incbin "custom.chr"   ;includes 8KB graphics file from SMB1
