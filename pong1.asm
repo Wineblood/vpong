@@ -5,23 +5,27 @@
 PRG_COUNT = 1 ;1 = 16KB, 2 = 32KB
 MIRRORING = %0001 ;%0000 = horizontal, %0001 = vertical, %1000 = four-screen
 
-;----------------------------------------------------------------
-; variables
-;----------------------------------------------------------------
+STATETITLE     = $00  ; displaying title screen
+STATEPLAYING   = $01  ; move paddles/ball, check for collisions
+STATEGAMEOVER  = $02  ; displaying game over screen
+STATENEWBALL   = $03  ; wait for player to press button to release 
 
+TOPWALL        = $08
+BOTTOMWALL     = $E6
 
-   ;NOTE: declare variables using the DSB and DSW directives, like this:
+PADDLE1X       = $08  ; horizontal position for paddles, doesnt move
+PADDLE2X       = $F0
 
-   ;MyVariable0 .dsb 1
-   ;MyVariable1 .dsb 3
+PADDLESPEED    = $03
+PADDLEHEIGHT   = $20
+PADDLEWIDTH    = $08
 
-   ;NOTE: you can also split the variable declarations into individual pages, like this:
+BALLSIZE     = $08
+NUMBEROFBALLLEVELS = $08
 
-   ;.enum $0100
-   ;.ende
-
-   ;.enum $0200
-   ;.ende
+SCOREXPOS_1P = $09
+SCOREXPOS_2P = $14   
+SCOREYPOS    = $2080   ; in ppu address (y = 4 in tiles)
 
 ;----------------------------------------------------------------
 ; iNES header
@@ -33,9 +37,9 @@ MIRRORING = %0001 ;%0000 = horizontal, %0001 = vertical, %1000 = four-screen
     .db $00|MIRRORING ;mapper 0 and mirroring
     .dsb 9, $00 ;clear the remaining bytes
 
-
-;;;;;;;;;;;;;;;
-;; DECLARE SOME VARIABLES HERE
+;----------------------------------------------------------------
+; variables
+;----------------------------------------------------------------
 
     .enum $0000
     
@@ -74,32 +78,11 @@ MIRRORING = %0001 ;%0000 = horizontal, %0001 = vertical, %1000 = four-screen
     
     .ende
 
-;; DECLARE SOME CONSTANTS HERE
-    STATETITLE     = $00  ; displaying title screen
-    STATEPLAYING   = $01  ; move paddles/ball, check for collisions
-    STATEGAMEOVER  = $02  ; displaying game over screen
-    STATENEWBALL   = $03  ; wait for player to press button to release 
-    
-    TOPWALL        = $08
-    BOTTOMWALL     = $E6
-    
-    PADDLE1X       = $08  ; horizontal position for paddles, doesnt move
-    PADDLE2X       = $F0
-    
-    PADDLESPEED    = $03
-    PADDLEHEIGHT   = $20
-    PADDLEWIDTH    = $08
-    
-    BALLSIZE     = $08
-    NUMBEROFBALLLEVELS = $08
-    
-    SCOREXPOS_1P = $09
-    SCOREXPOS_2P = $14   
-    SCOREYPOS    = $2080   ; in ppu address (y = 4 in tiles)
+;----------------------------------------------------------------
+; program bank(s)
+;----------------------------------------------------------------
 
-;;;;;;;;;;;;;;;;;;
-
-  .org $C000 
+  .base $10000-(PRG_COUNT*$4000)
 RESET:
   SEI          ; disable IRQs
   CLD          ; disable decimal mode
@@ -1347,6 +1330,10 @@ numberdata_9:
    .db $05,$02,$01
    .db $02,$02,$06
    
+;----------------------------------------------------------------
+; interrupt vectors
+;----------------------------------------------------------------
+
   .org $FFFA     ;first of the three vectors starts here
   .dw NMI        ;when an NMI happens (once per frame if enabled) the 
                    ;processor will jump to the label NMI:
@@ -1354,5 +1341,8 @@ numberdata_9:
                    ;to the label RESET:
   .dw 0          ;external interrupt IRQ is not used in this tutorial
 
-  
+;----------------------------------------------------------------
+; CHR-ROM bank
+;----------------------------------------------------------------
+
   .incbin "custom.chr"   ;includes 8KB graphics file from SMB1
