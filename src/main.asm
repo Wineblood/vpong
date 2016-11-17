@@ -96,11 +96,11 @@ RESET:
     STX $2001    ; disable rendering
     STX $4010    ; disable DMC IRQs
 
-vblankwait1:       ; First wait for vblank to make sure PPU is ready
+@vblankwait1:       ; First wait for vblank to make sure PPU is ready
     BIT $2002
-    BPL vblankwait1
+    BPL @vblankwait1
 
-clrmem:
+@clrmem:
     LDA #$00
     STA $0000, x
     STA $0100, x
@@ -112,13 +112,13 @@ clrmem:
     LDA #$FE
     STA $0200, x
     INX
-    BNE clrmem
+    BNE @clrmem
 
-vblankwait2:      ; Second wait for vblank, PPU is ready after this
+@vblankwait2:      ; Second wait for vblank, PPU is ready after this
     BIT $2002
-    BPL vblankwait2
+    BPL @vblankwait2
 
-LoadPalettes:
+@LoadPalettes:
     LDA $2002             ; read PPU status to reset the high/low latch
     LDA #$3F
     STA $2006             ; write the high byte of $3F00 address
@@ -126,7 +126,7 @@ LoadPalettes:
     STA $2006             ; write the low byte of $3F00 address
     LDX #$00              ; start out at 0
     
-LoadPalettesLoop:
+@LoadPalettesLoop:
     LDA palette, x        ; load data from address (palette + the value in x)
                           ; 1st time through loop it will load palette+0
                           ; 2nd time through loop it will load palette+1
@@ -135,11 +135,10 @@ LoadPalettesLoop:
     STA $2007             ; write to PPU
     INX                   ; X = X + 1
     CPX #$20              ; Compare X to hex $10, decimal 16 - copying 16 bytes = 4 sprites
-    BNE LoadPalettesLoop  ; Branch to LoadPalettesLoop if compare was Not Equal to zero
+    BNE @LoadPalettesLoop  ; Branch to LoadPalettesLoop if compare was Not Equal to zero
                         ; if compare was equal to 32, keep going down
 
-
-ClearBackground:
+@ClearBackground:
     LDA #$20
     STA var_2   ; var_2 = high byte of PPU address
     LDA #$00
@@ -147,10 +146,10 @@ ClearBackground:
     LDA $2002             ; read PPU status to reset the high/low latch
 
     LDY #$00
-ClearBackground_OuterLoop:
+@ClearBackground_OuterLoop:
     LDX #$00
 
-ClearBackground_InnerLoop
+@ClearBackground_InnerLoop
     LDA var_2
     STA $2006            ; set high byte write address 
     LDA var_1
@@ -169,13 +168,13 @@ ClearBackground_InnerLoop
     INX
 
     CPX #32
-    BNE ClearBackground_InnerLoop
+    BNE @ClearBackground_InnerLoop
 
     INY
     CPY #30
-    BNE ClearBackground_OuterLoop
+    BNE @ClearBackground_OuterLoop
     
-ClearAttributes:
+@ClearAttributes:
     LDA #$23
     STA var_2   ; var_2 = high byte of PPU address
     LDA #$C0
@@ -183,7 +182,7 @@ ClearAttributes:
     LDA $2002             ; read PPU status to reset the high/low latch
     LDX #$00
     
-ClearAttributes_Loop:
+@ClearAttributes_Loop:
     LDA var_2
     STA $2006             ; set high byte write address 
     LDA var_1
@@ -200,11 +199,11 @@ ClearAttributes_Loop:
 
     INX
     CPX #$F0
-    BNE ClearAttributes_Loop
+    BNE @ClearAttributes_Loop
 
     JSR RT_InitPlaySpaceBG
   
-InitSound:
+@InitSound:
     LDA #$0F
     STA $4015
     LDA #$00
@@ -250,8 +249,8 @@ InitSound:
     LDA #%00011110   ; enable sprites, enable background, no clipping on left side
     STA $2001
 
-Forever:
-    JMP Forever     ;jump back to Forever, infinite loop, waiting for NMI
+@Forever:
+    JMP @Forever     ;jump back to Forever, infinite loop, waiting for NMI
 
 NMI:
     LDA #$00
@@ -273,25 +272,25 @@ NMI:
     JSR RT_ReadController1  ;;get the current button data for player 1
     JSR RT_ReadController2  ;;get the current button data for player 2
   
-GameEngine:  
+@GameEngine:  
     LDA gamestate
     CMP #STATETITLE
-    BNE GameEngine_CheckStateGameOver 
+    BNE @GameEngine_CheckStateGameOver 
     BEQ EngineTitle    ;;game is displaying title screen
 
-GameEngine_CheckStateGameOver:  
+@GameEngine_CheckStateGameOver:  
     LDA gamestate
     CMP #STATEGAMEOVER
-    BNE GameEngine_CheckStatePlaying 
+    BNE @GameEngine_CheckStatePlaying 
     JMP EngineGameOver  ;;game is displaying ending screen
 
-GameEngine_CheckStatePlaying:
+@GameEngine_CheckStatePlaying:
     LDA gamestate
     CMP #STATEPLAYING
-    BNE GameEngine_CheckStateNewBall   
+    BNE @GameEngine_CheckStateNewBall   
     JMP EnginePlaying                    ;;game is playing
 
-GameEngine_CheckStateNewBall:
+@GameEngine_CheckStateNewBall:
     LDA gamestate
     CMP #STATENEWBALL
     BNE GameEngineDone
@@ -311,28 +310,28 @@ EngineTitle:
 EngineGameOver:
     JMP GameEngineDone
     
-  INCLUDE src\game.asm
+    INCLUDE src\game.asm
   
 ;----------------------------------------------------------------
 ; game data
 ;----------------------------------------------------------------
 
-  .org $E000
-  INCLUDE src\data.asm
+    .org $E000
+    INCLUDE src\data.asm
   
 ;----------------------------------------------------------------
 ; interrupt vectors
 ;----------------------------------------------------------------
 
-  .org $FFFA     ;first of the three vectors starts here
-  .dw NMI        ;when an NMI happens (once per frame if enabled) the 
+    .org $FFFA     ;first of the three vectors starts here
+    .dw NMI        ;when an NMI happens (once per frame if enabled) the 
                    ;processor will jump to the label NMI:
-  .dw RESET      ;when the processor first turns on or is reset, it will jump
+    .dw RESET      ;when the processor first turns on or is reset, it will jump
                    ;to the label RESET:
-  .dw 0          ;external interrupt IRQ is not used in this tutorial
+    .dw 0          ;external interrupt IRQ is not used in this tutorial
 
 ;----------------------------------------------------------------
 ; CHR-ROM bank
 ;----------------------------------------------------------------
 
-  .incbin "data\custom.chr"   ;includes 8KB graphics file from SMB1
+    .incbin "data\custom.chr"   ;includes 8KB graphics file from SMB1
