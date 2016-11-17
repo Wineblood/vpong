@@ -1,2 +1,2 @@
-asm6 pong1.asm pong1.nes
+asm6 src\main.asm bin\pong1.nes
 pause
