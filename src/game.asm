@@ -724,35 +724,7 @@ RT_EraseScore: ;;#ROUTINE_START  ;; TODO - Refactor and properly finish this fun
     STA $2005
 
     RTS
- 
-RT_ReadController1: ;;#ROUTINE_START
-    LDA #$01
-    STA $4016
-    LDA #$00
-    STA $4016
-    LDX #$08
-@ReadController1Loop:
-    LDA $4016
-    LSR A            ; bit0 -> Carry
-    ROL buttons1     ; bit0 <- Carry
-    DEX
-    BNE @ReadController1Loop
-    RTS
-  
-RT_ReadController2: ;;#ROUTINE_START
-    LDA #$01
-    STA $4016
-    LDA #$00
-    STA $4016
-    LDX #$08
-@ReadController2Loop:
-    LDA $4017
-    LSR A            ; bit0 -> Carry
-    ROL buttons2     ; bit0 <- Carry
-    DEX
-    BNE @ReadController2Loop
-    RTS  
-  
+
 ; arg_1 (IN)  = The hex number to convert
 ; var_1 (OUT) = The tens digit
 ; var_2 (OUT) = The ones digit
